@@ -29,7 +29,7 @@ param privateDns object
 // module deployments //
 ////////////////////////
 
-module hubResourceGroups 'modules/foundation/resource-groups.bicep' = [for r in resourceGroups: {
+module hubResourceGroups 'modules/resource-groups.bicep' = [for r in resourceGroups: {
   name: 'deploy-${r.name}'
   params: {
     name: r.name
@@ -41,7 +41,7 @@ module hubResourceGroups 'modules/foundation/resource-groups.bicep' = [for r in 
   }
 }]
 
-module hubIdentities 'modules/identity/userAssignedIdentity.bicep' = [for u in userAssignedIdentities: {
+module hubIdentities 'modules/user-assigned-identity.bicep' = [for u in userAssignedIdentities: {
   name: 'deploy-${u.name}'
   scope: resourceGroup(u.resourceGroupName)
   params: {
@@ -56,7 +56,7 @@ module hubIdentities 'modules/identity/userAssignedIdentity.bicep' = [for u in u
   dependsOn: [hubResourceGroups]
 }]
 
-module hubVnet 'modules/hub/vnet-hub.bicep' = {
+module hubVnet 'modules/vnet-hub.bicep' = {
   name: 'deploy-${vnet.name}'
   scope: resourceGroup(vnet.resourceGroupName)
   params: {
@@ -74,7 +74,7 @@ module hubVnet 'modules/hub/vnet-hub.bicep' = {
   dependsOn: [hubResourceGroups]
 }
 
-module hubPrivateDns 'modules/dns/private-dns-zones.bicep' = {
+module hubPrivateDns 'modules/private-dns-zones.bicep' = {
   name: 'deploy-private-dns'
   scope: resourceGroup(privateDns.resourceGroupName)
   params: {
@@ -87,7 +87,7 @@ module hubPrivateDns 'modules/dns/private-dns-zones.bicep' = {
   dependsOn: [hubResourceGroups]
 }
 
-module hubLogging 'modules/logging/log-analytics.bicep' = {
+module hubLogging 'modules/log-analytics.bicep' = {
   name: 'deploy-${logging.name}'
   scope: resourceGroup(logging.resourceGroupName)
   params: {
