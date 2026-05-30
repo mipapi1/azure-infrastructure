@@ -75,6 +75,11 @@ param firewall = {
   skuTier: firewallTier
 }
 
+param bastion = {
+  name: '${baseName}-bastion'
+  resourceGroupName: '${baseName}-networking-rg'
+}
+
 param privateDns = {
   resourceGroupName: '${baseName}-dns-rg'
   zones: loadJsonContent('../config/private-dns-zones.json')

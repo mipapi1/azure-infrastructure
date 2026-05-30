@@ -31,6 +31,9 @@ param firewallPolicy object
 @description('Azure Firewall. { name, resourceGroupName, skuTier? }')
 param firewall object
 
+@description('Azure Bastion. { name, resourceGroupName, skuName? }')
+param bastion object
+
 ////////////////////////
 // module deployments //
 ////////////////////////
@@ -107,6 +110,19 @@ module hubFirewall 'modules/azure-firewall.bicep' = {
     virtualNetworkResourceId: hubVnet.outputs.vnetResourceId
     firewallPolicyId: hubFirewallPolicy.outputs.resourceId
     azureSkuTier: firewall.?skuTier ?? 'Standard'
+  }
+  dependsOn: [hubResourceGroups]
+}
+
+module hubBastion 'modules/bastion.bicep' = {
+  name: 'deploy-${bastion.name}'
+  scope: resourceGroup(bastion.resourceGroupName)
+  params: {
+    name: bastion.name
+    location: location
+    tags: tags
+    virtualNetworkResourceId: hubVnet.outputs.vnetResourceId
+    skuName: bastion.?skuName ?? 'Standard'
   }
   dependsOn: [hubResourceGroups]
 }
