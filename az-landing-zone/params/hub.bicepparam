@@ -60,6 +60,11 @@ param vnet = {
   privateEndpointSubnetPrefix: '10.0.3.0/26'
 }
 
+param privateDns = {
+  resourceGroupName: '${baseName}-dns-rg'
+  zones: loadJsonContent('../config/private-dns-zones.json')
+}
+
 param logging = {
   name: '${baseName}-law'
   resourceGroupName: '${baseName}-monitoring-rg'
@@ -72,13 +77,9 @@ param userAssignedIdentities = [
   {
     name: '${baseName}-uami-logging'
     resourceGroupName: '${baseName}-management-rg'
-    enableLock: true
-    lockKind: 'CanNotDelete'
   }
   {
     name: '${baseName}-uami-encryption'
     resourceGroupName: '${baseName}-management-rg'
-    enableLock: true
-    lockKind: 'CanNotDelete'
   }
 ]

@@ -22,6 +22,9 @@ param logging object
 @description('Hub virtual network. { name, resourceGroupName, addressPrefix, firewallSubnetPrefix, bastionSubnetPrefix, gatewaySubnetPrefix, privateEndpointSubnetPrefix, enableLock?, lockKind? }')
 param vnet object
 
+@description('Private DNS zones. { resourceGroupName, zones, enableLock?, lockKind? }')
+param privateDns object
+
 ////////////////////////
 // module deployments //
 ////////////////////////
@@ -67,6 +70,19 @@ module hubVnet 'modules/hub/vnet-hub.bicep' = {
     privateEndpointSubnetPrefix: vnet.privateEndpointSubnetPrefix
     enableLock: vnet.?enableLock ?? false
     lockKind: vnet.?lockKind ?? 'CanNotDelete'
+  }
+  dependsOn: [hubResourceGroups]
+}
+
+module hubPrivateDns 'modules/dns/private-dns-zones.bicep' = {
+  name: 'deploy-private-dns'
+  scope: resourceGroup(privateDns.resourceGroupName)
+  params: {
+    zones: privateDns.zones
+    vnetResourceId: hubVnet.outputs.vnetResourceId
+    tags: tags
+    enableLock: privateDns.?enableLock ?? false
+    lockKind: privateDns.?lockKind ?? 'CanNotDelete'
   }
   dependsOn: [hubResourceGroups]
 }
