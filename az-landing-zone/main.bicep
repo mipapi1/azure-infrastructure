@@ -170,11 +170,11 @@ module hubAmpls 'modules/ampls.bicep' = {
     lawResourceId: hubLogging.outputs.resourceId
     privateEndpointSubnetResourceId: hubVnet.outputs.privateEndpointSubnetResourceId
     privateDnsZoneResourceIds: [
-      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.monitor.azure.com')
-      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.oms.opinsights.azure.com')
-      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.ods.opinsights.azure.com')
-      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.agentsvc.azure-automation.net')
-      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.blob.${environment().suffixes.storage}')
+      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.monitor.azure.com')
+      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.oms.opinsights.azure.com')
+      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.ods.opinsights.azure.com')
+      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.agentsvc.azure-automation.net')
+      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.blob.${environment().suffixes.storage}')
     ]
     enableLock: ampls.?enableLock ?? false
     lockKind: ampls.?lockKind ?? 'CanNotDelete'
