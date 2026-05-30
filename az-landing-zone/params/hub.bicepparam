@@ -29,7 +29,7 @@ param resourceGroups = [
     // ]
   }
   {
-    name: '${baseName}-security-rg'
+    name: '${baseName}-management-rg'
     enableLock: true
     lockKind: 'CanNotDelete'
     // roleAssignments: [
@@ -45,6 +45,21 @@ param resourceGroups = [
   }
   {
     name: '${baseName}-dns-rg'
+    enableLock: true
+    lockKind: 'CanNotDelete'
+  }
+]
+
+param userAssignedIdentities = [
+  {
+    name: '${baseName}-uami-logging'
+    resourceGroupName: '${baseName}-management-rg'
+    enableLock: true
+    lockKind: 'CanNotDelete'
+  }
+  {
+    name: '${baseName}-uami-encryption'
+    resourceGroupName: '${baseName}-management-rg'
     enableLock: true
     lockKind: 'CanNotDelete'
   }
