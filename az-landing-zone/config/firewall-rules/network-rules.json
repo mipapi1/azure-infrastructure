@@ -1,0 +1,32 @@
+[
+  {
+    "name": "DefaultNetworkRuleCollectionGroup",
+    "priority": 200,
+    "ruleCollections": [
+      {
+        "name": "AllowDnsResolution",
+        "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+        "action": { "type": "Allow" },
+        "priority": 100,
+        "rules": [
+          {
+            "ruleType": "NetworkRule",
+            "name": "AllowDns",
+            "ipProtocols": ["UDP", "TCP"],
+            "sourceAddresses": ["10.0.0.0/8"],
+            "destinationAddresses": ["*"],
+            "destinationPorts": ["53"]
+          },
+          {
+            "ruleType": "NetworkRule",
+            "name": "AllowNtp",
+            "ipProtocols": ["UDP"],
+            "sourceAddresses": ["10.0.0.0/8"],
+            "destinationAddresses": ["*"],
+            "destinationPorts": ["123"]
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -25,6 +25,12 @@ param vnet object
 @description('Private DNS zones. { resourceGroupName, zones, enableLock?, lockKind? }')
 param privateDns object
 
+@description('Firewall policy. { name, resourceGroupName, tier?, threatIntelMode? }')
+param firewallPolicy object
+
+@description('Azure Firewall. { name, resourceGroupName, skuTier? }')
+param firewall object
+
 ////////////////////////
 // module deployments //
 ////////////////////////
@@ -70,6 +76,37 @@ module hubVnet 'modules/vnet-hub.bicep' = {
     privateEndpointSubnetPrefix: vnet.privateEndpointSubnetPrefix
     enableLock: vnet.?enableLock ?? false
     lockKind: vnet.?lockKind ?? 'CanNotDelete'
+  }
+  dependsOn: [hubResourceGroups]
+}
+
+module hubFirewallPolicy 'modules/firewall-policy.bicep' = {
+  name: 'deploy-${firewallPolicy.name}'
+  scope: resourceGroup(firewallPolicy.resourceGroupName)
+  params: {
+    name: firewallPolicy.name
+    location: location
+    tags: tags
+    tier: firewallPolicy.?tier ?? 'Standard'
+    threatIntelMode: firewallPolicy.?threatIntelMode ?? 'Alert'
+    ruleCollectionGroups: concat(
+      loadJsonContent('config/firewall-rules/network-rules.json'),
+      loadJsonContent('config/firewall-rules/application-rules.json')
+    )
+  }
+  dependsOn: [hubResourceGroups]
+}
+
+module hubFirewall 'modules/azure-firewall.bicep' = {
+  name: 'deploy-${firewall.name}'
+  scope: resourceGroup(firewall.resourceGroupName)
+  params: {
+    name: firewall.name
+    location: location
+    tags: tags
+    virtualNetworkResourceId: hubVnet.outputs.vnetResourceId
+    firewallPolicyId: hubFirewallPolicy.outputs.resourceId
+    azureSkuTier: firewall.?skuTier ?? 'Standard'
   }
   dependsOn: [hubResourceGroups]
 }

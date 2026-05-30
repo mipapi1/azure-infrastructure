@@ -1,0 +1,43 @@
+[
+  {
+    "name": "DefaultApplicationRuleCollectionGroup",
+    "priority": 300,
+    "ruleCollections": [
+      {
+        "name": "AllowAzureServices",
+        "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+        "action": { "type": "Allow" },
+        "priority": 100,
+        "rules": [
+          {
+            "ruleType": "ApplicationRule",
+            "name": "AllowWindowsUpdate",
+            "protocols": [
+              { "protocolType": "Https", "port": 443 },
+              { "protocolType": "Http", "port": 80 }
+            ],
+            "sourceAddresses": ["10.0.0.0/8"],
+            "targetFqdns": [
+              "*.windowsupdate.microsoft.com",
+              "*.update.microsoft.com",
+              "*.delivery.mp.microsoft.com"
+            ]
+          },
+          {
+            "ruleType": "ApplicationRule",
+            "name": "AllowAzureMonitor",
+            "protocols": [
+              { "protocolType": "Https", "port": 443 }
+            ],
+            "sourceAddresses": ["10.0.0.0/8"],
+            "targetFqdns": [
+              "*.ods.opinsights.azure.com",
+              "*.oms.opinsights.azure.com",
+              "*.monitor.azure.com"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

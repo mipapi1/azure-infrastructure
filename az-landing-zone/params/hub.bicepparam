@@ -60,6 +60,21 @@ param vnet = {
   privateEndpointSubnetPrefix: '10.0.3.0/26'
 }
 
+var firewallTier = environment == 'prod' ? 'Premium' : 'Standard'
+
+param firewallPolicy = {
+  name: '${baseName}-afwp'
+  resourceGroupName: '${baseName}-networking-rg'
+  tier: firewallTier
+  threatIntelMode: 'Deny'
+}
+
+param firewall = {
+  name: '${baseName}-afw'
+  resourceGroupName: '${baseName}-networking-rg'
+  skuTier: firewallTier
+}
+
 param privateDns = {
   resourceGroupName: '${baseName}-dns-rg'
   zones: loadJsonContent('../config/private-dns-zones.json')
