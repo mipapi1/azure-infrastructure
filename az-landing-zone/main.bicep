@@ -34,6 +34,9 @@ param firewall object
 @description('Azure Bastion. { name, resourceGroupName, skuName? }')
 param bastion object
 
+@description('Azure Monitor Private Link Scope. { name, resourceGroupName }')
+param ampls object
+
 ////////////////////////
 // module deployments //
 ////////////////////////
@@ -156,4 +159,25 @@ module hubLogging 'modules/log-analytics.bicep' = {
     roleAssignments: logging.?roleAssignments ?? []
   }
   dependsOn: [hubResourceGroups, hubIdentities]
+}
+
+module hubAmpls 'modules/ampls.bicep' = {
+  name: 'deploy-${ampls.name}'
+  scope: resourceGroup(ampls.resourceGroupName)
+  params: {
+    name: ampls.name
+    tags: tags
+    lawResourceId: hubLogging.outputs.resourceId
+    privateEndpointSubnetResourceId: hubVnet.outputs.privateEndpointSubnetResourceId
+    privateDnsZoneResourceIds: [
+      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.monitor.azure.com')
+      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.oms.opinsights.azure.com')
+      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.ods.opinsights.azure.com')
+      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.agentsvc.azure-automation.net')
+      resourceId(privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.blob.${environment().suffixes.storage}')
+    ]
+    enableLock: ampls.?enableLock ?? false
+    lockKind: ampls.?lockKind ?? 'CanNotDelete'
+  }
+  dependsOn: [hubPrivateDns]
 }

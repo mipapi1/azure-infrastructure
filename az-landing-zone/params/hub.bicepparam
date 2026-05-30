@@ -93,6 +93,11 @@ param logging = {
   publicNetworkAccessForQuery: 'Disabled'
 }
 
+param ampls = {
+  name: '${baseName}-ampls'
+  resourceGroupName: '${baseName}-monitoring-rg'
+}
+
 param userAssignedIdentities = [
   {
     name: '${baseName}-uami-logging'
