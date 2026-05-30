@@ -4,6 +4,8 @@ Modular Bicep templates for deploying a zero-trust Azure landing zone, built on 
 
 ## What's inside
 
+![Hub Architecture](az-landing-zone/hub-architecture.png)
+
 | Folder | Description |
 |---|---|
 | `az-landing-zone` | Hub-spoke landing zone — resource groups, identities, networking, security, logging, and governance |
