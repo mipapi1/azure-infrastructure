@@ -26,6 +26,14 @@ param lockKind string = 'CanNotDelete'
 @description('Role assignments on the workspace')
 param roleAssignments array = []
 
+@description('Public network access for log ingestion')
+@allowed([ 'Enabled', 'Disabled' ])
+param publicNetworkAccessForIngestion string = 'Enabled'
+
+@description('Public network access for queries')
+@allowed([ 'Enabled', 'Disabled' ])
+param publicNetworkAccessForQuery string = 'Enabled'
+
 module law 'br/public:avm/res/operational-insights/workspace:0.15.0' = {
   name: 'law-${name}'
   params: {
@@ -36,6 +44,8 @@ module law 'br/public:avm/res/operational-insights/workspace:0.15.0' = {
     dataRetention: retentionInDays
     lock: enableLock ? { kind: lockKind, name: 'lock-${name}' } : null
     roleAssignments: roleAssignments
+    publicNetworkAccessForIngestion: publicNetworkAccessForIngestion
+    publicNetworkAccessForQuery: publicNetworkAccessForQuery
   }
 }
 

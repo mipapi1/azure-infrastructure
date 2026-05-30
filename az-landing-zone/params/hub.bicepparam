@@ -50,17 +50,56 @@ param resourceGroups = [
   }
 ]
 
+param vnet = {
+  name: '${baseName}-vnet'
+  resourceGroupName: '${baseName}-networking-rg'
+  addressPrefix: '10.0.0.0/22'
+  firewallSubnetPrefix: '10.0.0.0/26'
+  bastionSubnetPrefix: '10.0.1.0/26'
+  gatewaySubnetPrefix: '10.0.2.0/27'
+  privateEndpointSubnetPrefix: '10.0.3.0/26'
+}
+
+var firewallTier = environment == 'prod' ? 'Premium' : 'Standard'
+
+param firewallPolicy = {
+  name: '${baseName}-afwp'
+  resourceGroupName: '${baseName}-networking-rg'
+  tier: firewallTier
+  threatIntelMode: 'Deny'
+}
+
+param firewall = {
+  name: '${baseName}-afw'
+  resourceGroupName: '${baseName}-networking-rg'
+  skuTier: firewallTier
+}
+
+param bastion = {
+  name: '${baseName}-bastion'
+  resourceGroupName: '${baseName}-networking-rg'
+}
+
+param privateDns = {
+  resourceGroupName: '${baseName}-dns-rg'
+  zones: loadJsonContent('../config/private-dns-zones.json')
+}
+
+param logging = {
+  name: '${baseName}-law'
+  resourceGroupName: '${baseName}-monitoring-rg'
+  retentionInDays: 90
+  publicNetworkAccessForIngestion: 'Disabled'
+  publicNetworkAccessForQuery: 'Disabled'
+}
+
 param userAssignedIdentities = [
   {
     name: '${baseName}-uami-logging'
     resourceGroupName: '${baseName}-management-rg'
-    enableLock: true
-    lockKind: 'CanNotDelete'
   }
   {
     name: '${baseName}-uami-encryption'
     resourceGroupName: '${baseName}-management-rg'
-    enableLock: true
-    lockKind: 'CanNotDelete'
   }
 ]
