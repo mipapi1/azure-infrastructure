@@ -16,6 +16,12 @@ param resourceGroups array
 @description('User-assigned managed identities. Each: { name, resourceGroupName, enableLock?, lockKind?, roleAssignments?, federatedIdentityCredentials? }')
 param userAssignedIdentities array
 
+@description('Log Analytics workspace. { name, resourceGroupName, retentionInDays?, skuName?, publicNetworkAccessForIngestion?, publicNetworkAccessForQuery?, enableLock?, lockKind?, roleAssignments? }')
+param logging object
+
+@description('Hub virtual network. { name, resourceGroupName, addressPrefix, firewallSubnetPrefix, bastionSubnetPrefix, gatewaySubnetPrefix, privateEndpointSubnetPrefix, enableLock?, lockKind? }')
+param vnet object
+
 ////////////////////////
 // module deployments //
 ////////////////////////
@@ -46,3 +52,39 @@ module hubIdentities 'modules/identity/userAssignedIdentity.bicep' = [for u in u
   }
   dependsOn: [hubResourceGroups]
 }]
+
+module hubVnet 'modules/hub/vnet-hub.bicep' = {
+  name: 'deploy-${vnet.name}'
+  scope: resourceGroup(vnet.resourceGroupName)
+  params: {
+    name: vnet.name
+    location: location
+    tags: tags
+    addressPrefix: vnet.addressPrefix
+    firewallSubnetPrefix: vnet.firewallSubnetPrefix
+    bastionSubnetPrefix: vnet.bastionSubnetPrefix
+    gatewaySubnetPrefix: vnet.gatewaySubnetPrefix
+    privateEndpointSubnetPrefix: vnet.privateEndpointSubnetPrefix
+    enableLock: vnet.?enableLock ?? false
+    lockKind: vnet.?lockKind ?? 'CanNotDelete'
+  }
+  dependsOn: [hubResourceGroups]
+}
+
+module hubLogging 'modules/logging/log-analytics.bicep' = {
+  name: 'deploy-${logging.name}'
+  scope: resourceGroup(logging.resourceGroupName)
+  params: {
+    name: logging.name
+    location: location
+    tags: tags
+    skuName: logging.?skuName ?? 'PerGB2018'
+    retentionInDays: logging.?retentionInDays ?? 90
+    publicNetworkAccessForIngestion: logging.?publicNetworkAccessForIngestion ?? 'Enabled'
+    publicNetworkAccessForQuery: logging.?publicNetworkAccessForQuery ?? 'Enabled'
+    enableLock: logging.?enableLock ?? false
+    lockKind: logging.?lockKind ?? 'CanNotDelete'
+    roleAssignments: logging.?roleAssignments ?? []
+  }
+  dependsOn: [hubResourceGroups, hubIdentities]
+}

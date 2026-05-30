@@ -50,6 +50,24 @@ param resourceGroups = [
   }
 ]
 
+param vnet = {
+  name: '${baseName}-vnet'
+  resourceGroupName: '${baseName}-networking-rg'
+  addressPrefix: '10.0.0.0/22'
+  firewallSubnetPrefix: '10.0.0.0/26'
+  bastionSubnetPrefix: '10.0.1.0/26'
+  gatewaySubnetPrefix: '10.0.2.0/27'
+  privateEndpointSubnetPrefix: '10.0.3.0/26'
+}
+
+param logging = {
+  name: '${baseName}-law'
+  resourceGroupName: '${baseName}-monitoring-rg'
+  retentionInDays: 90
+  publicNetworkAccessForIngestion: 'Disabled'
+  publicNetworkAccessForQuery: 'Disabled'
+}
+
 param userAssignedIdentities = [
   {
     name: '${baseName}-uami-logging'
