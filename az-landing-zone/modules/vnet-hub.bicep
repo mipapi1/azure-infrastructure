@@ -19,8 +19,8 @@ param bastionSubnetPrefix string
 @description('Address prefix for GatewaySubnet (/27 minimum — reserved for future VPN gateway)')
 param gatewaySubnetPrefix string
 
-@description('Address prefix for PrivateEndpointSubnet')
-param privateEndpointSubnetPrefix string
+@description('Address prefix for PrivateEndpointSubnet — omit or leave empty to skip creating the subnet')
+param privateEndpointSubnetPrefix string = ''
 
 @description('When true, applies a lock to the VNet')
 param enableLock bool = false
@@ -37,25 +37,29 @@ module vnet 'br/public:avm/res/network/virtual-network:0.9.0' = {
     tags: tags
     addressPrefixes: [ addressPrefix ]
     lock: enableLock ? { kind: lockKind, name: 'lock-${name}' } : null
-    subnets: [
-      {
-        name: 'AzureFirewallSubnet'
-        addressPrefix: firewallSubnetPrefix
-      }
-      {
-        name: 'AzureBastionSubnet'
-        addressPrefix: bastionSubnetPrefix
-      }
-      {
-        name: 'GatewaySubnet'
-        addressPrefix: gatewaySubnetPrefix
-      }
-      {
-        name: 'PrivateEndpointSubnet'
-        addressPrefix: privateEndpointSubnetPrefix
-        privateEndpointNetworkPolicies: 'Disabled'
-      }
-    ]
+    subnets: concat(
+      [
+        {
+          name: 'AzureFirewallSubnet'
+          addressPrefix: firewallSubnetPrefix
+        }
+        {
+          name: 'AzureBastionSubnet'
+          addressPrefix: bastionSubnetPrefix
+        }
+        {
+          name: 'GatewaySubnet'
+          addressPrefix: gatewaySubnetPrefix
+        }
+      ],
+      !empty(privateEndpointSubnetPrefix) ? [
+        {
+          name: 'PrivateEndpointSubnet'
+          addressPrefix: privateEndpointSubnetPrefix
+          privateEndpointNetworkPolicies: 'Disabled'
+        }
+      ] : []
+    )
   }
 }
 
@@ -64,4 +68,4 @@ output vnetName string = vnet.outputs.name
 output firewallSubnetResourceId string = '${vnet.outputs.resourceId}/subnets/AzureFirewallSubnet'
 output bastionSubnetResourceId string = '${vnet.outputs.resourceId}/subnets/AzureBastionSubnet'
 output gatewaySubnetResourceId string = '${vnet.outputs.resourceId}/subnets/GatewaySubnet'
-output privateEndpointSubnetResourceId string = '${vnet.outputs.resourceId}/subnets/PrivateEndpointSubnet'
+output privateEndpointSubnetResourceId string = !empty(privateEndpointSubnetPrefix) ? '${vnet.outputs.resourceId}/subnets/PrivateEndpointSubnet' : ''

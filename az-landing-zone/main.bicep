@@ -19,7 +19,7 @@ param userAssignedIdentities array
 @description('Log Analytics workspace. { name, resourceGroupName, retentionInDays?, skuName?, publicNetworkAccessForIngestion?, publicNetworkAccessForQuery?, enableLock?, lockKind?, roleAssignments? }')
 param logging object
 
-@description('Hub virtual network. { name, resourceGroupName, addressPrefix, firewallSubnetPrefix, bastionSubnetPrefix, gatewaySubnetPrefix, privateEndpointSubnetPrefix, enableLock?, lockKind? }')
+@description('Hub virtual network. { name, resourceGroupName, addressPrefix, firewallSubnetPrefix, bastionSubnetPrefix, gatewaySubnetPrefix, privateEndpointSubnetPrefix?, enableLock?, lockKind? }')
 param vnet object
 
 @description('Private DNS zones. { resourceGroupName, zones, enableLock?, lockKind? }')
@@ -34,8 +34,14 @@ param firewall object
 @description('Azure Bastion. { name, resourceGroupName, skuName? }')
 param bastion object
 
-@description('Azure Monitor Private Link Scope. { name, resourceGroupName }')
-param ampls object
+@description('Azure Monitor Private Link Scope. Required when either logging.publicNetworkAccessForIngestion or publicNetworkAccessForQuery is Disabled. { name, resourceGroupName }')
+param ampls object = {}
+
+////////////////////////
+// variables          //
+////////////////////////
+
+var usePrivateNetworking = (logging.?publicNetworkAccessForIngestion ?? 'Enabled') == 'Disabled' || (logging.?publicNetworkAccessForQuery ?? 'Enabled') == 'Disabled'
 
 ////////////////////////
 // module deployments //
@@ -79,7 +85,7 @@ module hubVnet 'modules/vnet-hub.bicep' = {
     firewallSubnetPrefix: vnet.firewallSubnetPrefix
     bastionSubnetPrefix: vnet.bastionSubnetPrefix
     gatewaySubnetPrefix: vnet.gatewaySubnetPrefix
-    privateEndpointSubnetPrefix: vnet.privateEndpointSubnetPrefix
+    privateEndpointSubnetPrefix: usePrivateNetworking ? vnet.privateEndpointSubnetPrefix : ''
     enableLock: vnet.?enableLock ?? false
     lockKind: vnet.?lockKind ?? 'CanNotDelete'
   }
@@ -161,7 +167,7 @@ module hubLogging 'modules/log-analytics.bicep' = {
   dependsOn: [hubResourceGroups, hubIdentities]
 }
 
-module hubAmpls 'modules/ampls.bicep' = {
+module hubAmpls 'modules/ampls.bicep' = if (usePrivateNetworking) {
   name: 'deploy-${ampls.name}'
   scope: resourceGroup(ampls.resourceGroupName)
   params: {
