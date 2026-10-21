@@ -1,0 +1,2 @@
+# STIG rules not applied to Azure images. Format: rule_id  # reason. Each one is a deviation to review with your ISSO.
+sudo_remove_nopasswd            # cloud-init/waagent give the SSH-key admin NOPASSWD sudo; the build and deprovisioning run through sudo

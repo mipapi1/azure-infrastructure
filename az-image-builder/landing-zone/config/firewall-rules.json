@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Outbound allow-list for image builds behind Azure Firewall (egress.mode = firewall). Source addresses are filled in from the subnets.",
+    "containerInstance: the Image Builder container (Packer) calls Azure Resource Manager and Entra ID and writes build logs to the staging storage account.",
+    "buildVm: OS updates, Defender, Windows activation, and the Ubuntu/RHEL package repositories (RHUI is Red Hat's Azure update service for pay-as-you-go images).",
+    "Scripts and installers come from the image builder storage account over its private endpoint. Add FQDNs your own scripts download from."
+  ],
+  "containerInstance": {
+    "targetFqdns": [
+      "management.azure.com",
+      "login.microsoftonline.com",
+      "packages.microsoft.com",
+      "mcr.microsoft.com",
+      "*.data.mcr.microsoft.com",
+      "*.blob.core.windows.net"
+    ]
+  },
+  "buildVm": {
+    "fqdnTags": [
+      "WindowsUpdate",
+      "WindowsDiagnostics"
+    ],
+    "targetFqdns": [
+      "aka.ms",
+      "go.microsoft.com",
+      "*.wdcp.microsoft.com",
+      "*.wdcpalt.microsoft.com",
+      "definitionupdates.microsoft.com",
+      "crl.microsoft.com",
+      "www.microsoft.com",
+      "azure.archive.ubuntu.com",
+      "archive.ubuntu.com",
+      "security.ubuntu.com",
+      "esm.ubuntu.com",
+      "rhui4-1.microsoft.com",
+      "packages.microsoft.com"
+    ],
+    "kmsAddresses": [
+      "20.118.99.224",
+      "40.83.235.53",
+      "23.102.135.246"
+    ]
+  }
+}

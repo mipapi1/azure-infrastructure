@@ -1,0 +1,6 @@
+# STIG rules expected to fail on the image, by category:
+#   deploy  fixed on the deployed VM: sudo bash /usr/local/lib/image-stig/stig/harden.sh --deployed (Run Command)
+#   open    not remediated automatically; the justification is the finding to report
+# Format: rule_id  category  # justification. Unlisted failures show as "unexplained" in summary.json.
+aide_build_database             deploy  # the AIDE baseline must describe the deployed VM, not the build VM
+grub2_password                  open    # needs a site secret that must not be in the image; set it per VM (RHEL: grub2-setpassword)

@@ -1,0 +1,3 @@
+# RHEL-only exclusions (see common.txt).
+sudo_remove_no_authenticate     # same reason as sudo_remove_nopasswd
+fapolicy_default_deny           # deny-all application allowlisting blocks Azure VM extensions (Run Command, monitoring agents)
