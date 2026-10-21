@@ -1,0 +1,7 @@
+# RHEL-only expected failures (see common.txt). Partition rules pass if the source image has the volume.
+partition_for_home              open    # Marketplace image disk layout; needs a custom source image or separate volumes
+partition_for_tmp               open    # same as partition_for_home
+partition_for_var               open    # same as partition_for_home
+partition_for_var_log           open    # same as partition_for_home
+partition_for_var_log_audit     open    # same as partition_for_home
+partition_for_var_tmp           open    # same as partition_for_home

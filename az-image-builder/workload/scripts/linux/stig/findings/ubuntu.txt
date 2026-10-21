@@ -1,0 +1,3 @@
+# Ubuntu-only expected failures (see common.txt).
+grub2_uefi_password             open    # same as grub2_password
+is_fips_mode_enabled            open    # FIPS modules need Ubuntu Pro; enable with "pro enable fips-updates" on licensed VMs

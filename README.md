@@ -10,7 +10,7 @@ Modular Bicep templates for deploying a zero-trust Azure landing zone, built on 
 |---|---|
 | `az-landing-zone` | Hub-spoke landing zone — resource groups, identities, networking, security, logging, and governance |
 | `az-avd` | Azure Virtual Desktop spoke deployment |
-| `az-image-builder` | STIG-hardened AVD image pipeline using Azure Image Builder |
+| `az-image-builder` | STIG-hardened Windows and Linux images with Azure Image Builder |
 
 ## Architecture approach
 

@@ -1,0 +1,17 @@
+# Windows STIG items not in effect when the image is captured. Copied to C:\ProgramData\STIG\findings.txt.
+#   sysprep  withheld during the build (they break Packer's WinRM session), applied by DeprovisioningScript.ps1 before sysprep
+#   deploy   applied per VM: C:\ProgramData\STIG\Apply-DeferredStigs.ps1 -Phase Deploy (Run Command)
+#   open     deviation: not applied; the justification is the finding to report
+# Format: item  category  # justification
+SeDenyNetworkLogonRight-LocalAccounts   sysprep  # *S-1-5-113 / *S-1-5-114 deny network logon to local accounts, including Packer's
+FilterAdministratorToken                sysprep  # admin approval mode for the built-in Administrator
+WinRM-Service-AllowBasic                sysprep  # WinRM Basic authentication off
+LocalAccountTokenFilterPolicy           sysprep  # UAC remote restrictions for local accounts
+NewAdministratorName                    deploy   # Azure sets the admin account name at provisioning; renamed per VM
+DenyNetworkLogon-BuiltInAdministrator   deploy   # needs the per-VM built-in Administrator SID
+DisableLocalAdministrators              deploy   # V-253432; disabling them in the image would block provisioning. -DisableLocalAdministrators $false keeps break-glass access
+BitLocker                               open     # Azure VMs have no TPM pre-boot PIN; disks are encrypted by the platform (SSE, host encryption or ADE). FVE policy removed
+FirewallPublicProfile-AllowLocalPolicyMerge open # non-domain VMs need local firewall rules (Azure agent, extensions); STIG GPO value removed
+DomainPrincipals-UserRights             open     # Domain Admins / Enterprise Admins entries removed: images are not domain-joined at build time; re-add by domain GPO
+EdgeChrome-DeveloperTools               open     # Standard profile only (V-235727 Edge, V-221599 Chrome): developer tools allowed for admin/developer images
+AppLocker-ScriptMsiAuditOnly            open     # Standard profile only: script and MSI rules audit instead of enforce

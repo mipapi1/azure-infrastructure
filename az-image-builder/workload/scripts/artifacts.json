@@ -1,0 +1,82 @@
+{
+  "$comment": [
+    "Installer inventory: what the build VM downloads (by 'group', see images[].artifactGroups), what tools/Get-Installers.ps1 downloads ('sourceUrl') or expects ('manual'),",
+    "and what tools/Publish-Installers.ps1 uploads to 'blob'. Blobs are never overwritten: a new version gets a new 'blob' name and 'sha256'.",
+    "Groups windows-stig / linux-stig and chrome are added automatically when hardening or the chrome browser is on. Destinations use the build VM's OS paths."
+  ],
+  "container": "installers",
+  "artifacts": [
+    {
+      "name": "stig-gpo-package", "group": "windows-stig",
+      "blob": "stig/U_STIG_GPO_Package_July_2026.zip",
+      "sha256": "EED9542AAFE07C6B674A3F6F6634C4987DB45A22F2DAA9F2D9C80B6B93072DE6",
+      "destination": "C:\\Temp\\U_STIG_GPO_Package_July_2026.zip", "extractTo": "C:\\Temp\\stig",
+      "sourceUrl": "https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_July_2026.zip"
+    },
+    {
+      "name": "lgpo", "group": "windows-stig",
+      "blob": "stig/LGPO-2025.02.14.zip",
+      "sha256": "CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55",
+      "destination": "C:\\Temp\\LGPO.zip", "extractTo": "C:\\Temp",
+      "sourceUrl": "https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip"
+    },
+    {
+      "name": "scap-security-guide", "group": "linux-stig",
+      "blob": "stig/scap-security-guide-0.1.82.zip",
+      "sha256": "765E84BDCE7F9055F9B9C2DD0EE2B713D4255F8EEC94EAC6D35EA4973C28919C",
+      "destination": "/var/tmp/imagebuilder/scap-security-guide.zip",
+      "sourceUrl": "https://github.com/ComplianceAsCode/content/releases/download/v0.1.82/scap-security-guide-0.1.82.zip",
+      "note": "ComplianceAsCode STIG profiles: Ubuntu 24.04 (DISA V1R5), RHEL 9 (V2R9), RHEL 10 (V1R2). New release: change blob, sourceUrl, then Get-Installers.ps1 -Name scap-security-guide -UpdateHashes."
+    },
+    {
+      "name": "scc", "group": "scap",
+      "blob": "stig/scc-5.15_Windows_bundle.zip",
+      "sha256": "A537A0F9A39CCC2231818709F8BB5F8F9B9CBFC2EC0D44DBBFABBE35D4F558BA",
+      "destination": "C:\\scap\\scc-5.15_Windows_bundle.zip", "extractTo": "C:\\scap",
+      "sourceUrl": "https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/scc-5.15_Windows_bundle.zip"
+    },
+    {
+      "name": "chrome", "group": "chrome",
+      "blob": "browser/googlechromestandaloneenterprise64-155.0.8059.80.msi",
+      "sha256": "2734DC5577DCBAB49BE037E5A074AEF9948FACA14453B52DEFB01224C196A3F5",
+      "destination": "C:\\Tools\\GoogleChromeEnterprise.msi",
+      "sourceUrl": "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi",
+      "note": "Google's URL always serves the current stable Chrome, so a fresh download stops matching this sha256 after the next release. To update: delete the staged file, run Get-Installers.ps1 -Name chrome -UpdateHashes, and rename 'blob' to the new version (the build log prints the installed version)."
+    },
+    {
+      "name": "git", "group": "git",
+      "blob": "tools/Git-2.56.0.2-64-bit.exe",
+      "sha256": "52188F917B378F00C70EC136BCF090005F30D44FBC4EBA0BCE759CC6592D60F6",
+      "destination": "C:\\Tools\\git.exe",
+      "sourceUrl": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/Git-2.56.0.2-64-bit.exe"
+    },
+    {
+      "name": "azure-cli", "group": "azure-cli",
+      "blob": "tools/azure-cli-2.91.0-x64.msi",
+      "sha256": "E9F512D127A9BC6C3832B928CCBF04AB9467A199BCA63A1155F9D533CEB9F461",
+      "destination": "C:\\Tools\\AzureCLI.msi",
+      "sourceUrl": "https://azcliprod.blob.core.windows.net/msi/azure-cli-2.91.0-x64.msi"
+    },
+    {
+      "name": "kubelogin", "group": "azure-cli",
+      "blob": "tools/kubelogin-v0.2.21-win-amd64.zip",
+      "sha256": "EF2EA460E491FFAD032C8393061C2D17F53DB76D999F22244D5C63E530F848F9",
+      "destination": "C:\\Tools\\AzureKubeLogin.zip",
+      "sourceUrl": "https://github.com/Azure/kubelogin/releases/download/v0.2.21/kubelogin-win-amd64.zip"
+    },
+    {
+      "name": "kubectl", "group": "azure-cli",
+      "blob": "tools/kubectl-v1.34.12.exe",
+      "sha256": "DF1EABF29654D57E250FED6E7573B94A8C0F5AE83179A71B540A5BF8AD112276",
+      "destination": "C:\\Tools\\kubectl.exe",
+      "sourceUrl": "https://dl.k8s.io/release/v1.34.12/bin/windows/amd64/kubectl.exe"
+    },
+    {
+      "name": "python", "group": "python",
+      "blob": "tools/python-3.14.8-amd64.exe",
+      "sha256": "759BE887B96E736A3CA886DAF8D575F18FCAE1A09EFAB6902F42D59E8999F8EF",
+      "destination": "C:\\Tools\\python.exe",
+      "sourceUrl": "https://www.python.org/ftp/python/3.14.8/python-3.14.8-amd64.exe"
+    }
+  ]
+}

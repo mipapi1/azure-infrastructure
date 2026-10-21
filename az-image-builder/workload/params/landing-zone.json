@@ -1,0 +1,14 @@
+{
+  "resourceGroupName": "aib-prod-eus-rg",
+  "location": "eastus",
+  "virtualNetworkName": "aib-prod-eus-vnet",
+  "buildSubnetName": "snet-build",
+  "containerInstanceSubnetName": "snet-aci",
+  "storageAccountName": "aibprodeusst",
+  "templateIdentityName": "aib-prod-eus-uami-template",
+  "buildVmIdentityName": "aib-prod-eus-uami-buildvm",
+  "gallery": {
+    "resourceGroupName": "aib-prod-eus-rg",
+    "name": "aib_prod_eus_gal"
+  }
+}
