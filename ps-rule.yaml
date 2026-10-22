@@ -30,7 +30,9 @@ configuration:
 
 rule:
   # Exclusions are listed with the reason in docs/DECISIONS.md.
-  exclude: []
+  exclude:
+    # D-013: spokes use the firewall DNS proxy, a single (zone-redundant) IP by design.
+    - Azure.VNET.SingleDNS
 
 suppression:
   # D-005: image builder content storage, reproducible from the publish tools.

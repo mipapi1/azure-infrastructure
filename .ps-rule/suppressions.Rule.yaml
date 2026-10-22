@@ -1,0 +1,14 @@
+# Suppression groups for PSRule for Azure. Each one is explained in docs/DECISIONS.md.
+---
+# D-013: AVD session hosts are patched by Windows Update and replaced from new
+# images; they don't use Azure Update Manager maintenance configurations.
+apiVersion: github.com/microsoft/PSRule/v1
+kind: SuppressionGroup
+metadata:
+  name: AvdSessionHostMaintenance
+spec:
+  rule:
+    - Azure.VM.MaintenanceConfig
+  if:
+    field: tags.avd-host-pool
+    exists: true
