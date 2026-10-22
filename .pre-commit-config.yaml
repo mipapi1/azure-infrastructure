@@ -1,0 +1,48 @@
+# pre-commit install
+# Bicep and docs hooks run in the tooling container (make tools first).
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-json
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^az-apps/charts/.*/templates/
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: bicep-format
+        name: bicep format check
+        entry: make format-check
+        language: system
+        files: \.(bicep|bicepparam)$
+        pass_filenames: false
+      - id: bicep-lint
+        name: bicep lint
+        entry: make lint
+        language: system
+        files: \.(bicep|bicepparam)$|^bicepconfig\.json$
+        pass_filenames: false
+      - id: readme-params
+        name: README parameter tables
+        entry: make docs-check
+        language: system
+        files: \.bicep$|README\.md$
+        pass_filenames: false
+      - id: kubernetes
+        name: Kubernetes manifests
+        entry: make k8s
+        language: system
+        files: ^(az-apps|az-aks/gitops)/
+        pass_filenames: false

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "timezone": "UTC",
+  "prConcurrentLimit": 10,
+  "labels": [
+    "dependencies"
+  ],
+  "ignoreDeps": [
+    "azinfra-tools"
+  ],
+  "flux": {
+    "managerFilePatterns": [
+      "/^az-aks/gitops/.+\\.ya?ml$/",
+      "/^az-apps/deploy/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Versions annotated with a renovate comment (tooling, CI tools)",
+      "managerFilePatterns": [
+        "/^tooling/Dockerfile$/",
+        "/^az-apps/ci/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+)(?: registryUrl=(?<registryUrl>\\S+))? depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+(?:ARG )?\\w+[=:] ?(?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Container images in CI variables and scripts",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/",
+        "/^az-apps/ci/.+\\.ya?ml$/",
+        "/^az-apps/tests/.+\\.sh$/",
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:IMAGE\\s*[:?]?=|IMAGE:|_image=\")\\s*\"?(?<depName>[a-z0-9./-]+):(?<currentValue>[A-Za-z0-9._-]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Azure Verified Modules, one PR per week",
+      "matchManagers": [
+        "bicep"
+      ],
+      "matchPackageNames": [
+        "/^br/public:avm/"
+      ],
+      "groupName": "Azure Verified Modules"
+    },
+    {
+      "description": "Pin Kubernetes tooling to the AKS minor version",
+      "matchPackageNames": [
+        "kubernetes/kubernetes",
+        "kindest/node"
+      ],
+      "allowedVersions": "/^v?1\\.34\\./"
+    },
+    {
+      "description": "GitHub Actions digests, grouped",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Platform charts on the clusters",
+      "matchManagers": [
+        "flux"
+      ],
+      "groupName": "Platform charts"
+    }
+  ]
+}

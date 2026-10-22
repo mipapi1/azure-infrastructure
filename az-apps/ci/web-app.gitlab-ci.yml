@@ -12,7 +12,9 @@ variables:
   DIND_IMAGE: docker:29.9.2-dind
   TRIVY_IMAGE: aquasec/trivy:0.75.0
   AZURE_CLI_IMAGE: mcr.microsoft.com/azure-cli:2.91.0
+  # renovate: datasource=github-releases depName=sigstore/cosign
   COSIGN_VERSION: v3.1.4
+  # renovate: datasource=github-releases depName=google/go-containerregistry
   CRANE_VERSION: v0.22.1
 
 stages: [build, scan, publish, promote]

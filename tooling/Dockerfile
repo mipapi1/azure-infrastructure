@@ -4,13 +4,21 @@
 # with --platform linux/amd64 (Docker Desktop emulates it on Apple silicon).
 FROM --platform=linux/amd64 mcr.microsoft.com/powershell:7.5-ubuntu-24.04
 
+# renovate: datasource=github-releases depName=Azure/bicep extractVersion=^v(?<version>.+)$
 ARG BICEP_VERSION=0.47.16
+# renovate: datasource=nuget registryUrl=https://www.powershellgallery.com/api/v2 depName=PSRule.Rules.Azure
 ARG PSRULE_AZURE_VERSION=1.47.0
+# renovate: datasource=github-releases depName=yannh/kubeconform extractVersion=^v(?<version>.+)$
 ARG KUBECONFORM_VERSION=0.8.0
+# renovate: datasource=github-releases depName=helm/helm extractVersion=^v(?<version>3\..+)$
 ARG HELM_VERSION=3.22.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/v(?<version>.+)$
 ARG KUSTOMIZE_VERSION=5.8.1
+# renovate: datasource=github-releases depName=kubernetes-sigs/kind extractVersion=^v(?<version>.+)$
 ARG KIND_VERSION=0.33.0
+# renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>1\.34\..+)$
 ARG KUBECTL_VERSION=1.34.12
+# renovate: datasource=github-releases depName=moby/moby extractVersion=^docker-v(?<version>.+)$
 ARG DOCKER_CLI_VERSION=29.9.2
 
 RUN apt-get update \
