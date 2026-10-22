@@ -246,8 +246,10 @@ resource agentRegistration 'Microsoft.Compute/virtualMachines/extensions@2025-04
         configurationFunction: 'Configuration.ps1\\AddSessionHost'
         properties: {
           hostPoolName: hostPool.name
+          // Not a credential: the DSC extension resolves this reference from protected settings.
           registrationInfoTokenCredential: {
             UserName: 'PLACEHOLDER_DO_NOT_USE'
+            // checkov:skip=CKV_SECRET_6: reference name, not a secret value
             Password: 'PrivateSettingsRef:RegistrationInfoToken'
           }
           aadJoin: isEntraJoined
