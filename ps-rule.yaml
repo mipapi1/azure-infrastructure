@@ -45,10 +45,29 @@ suppression:
     - hub-staging-eus-afw-pip
   Azure.Log.Replication:
     - hub-staging-eus-law
-  # D-007: AVM key vault 'keys' holds key definitions, not secret values.
+  # D-018: staging AKS runs without zones and on the Free tier.
+  Azure.AKS.AvailabilityZone:
+    - aks-staging-eus-aks
+  Azure.AKS.UptimeSLA:
+    - aks-staging-eus-aks
+  Azure.Grafana.AvailabilityZone:
+    - aks-staging-eus-amg
+  # D-018: Cilium network policy (Azure CNI powered by Cilium) is the Microsoft-recommended engine.
+  Azure.AKS.NetworkPolicy:
+    - aks-prod-eus-aks
+    - aks-staging-eus-aks
+  # D-018: single-region registry; replicate when a second region is added.
+  Azure.ACR.GeoReplica:
+    - aksprodeuscr5e1e6a92e49e1
+    - aksstagingeuscr5e1e6a92e49e1
+  # D-007: AVM key vault and registry modules declare secure object parameters (key and credential definitions) that are passed nothing secret here.
   Azure.Deployment.SecureParameter:
     - hub-prod-eus-kv-deploy
     - hub-staging-eus-kv-deploy
+    - aks-prod-eus-kv-deploy
+    - aks-staging-eus-kv-deploy
+    - aks-prod-eus-acr-deploy
+    - aks-staging-eus-acr-deploy
   # D-007: Bastion must reach VMs on 22/3389; that is its purpose.
   Azure.NSG.LateralTraversal:
     - hub-prod-eus-vnet-AzureBastionSubnet-nsg
