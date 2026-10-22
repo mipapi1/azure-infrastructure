@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the repository as it stood before the platform build-out, the gaps against the target platform, and the conventions applied from here on. The target architecture is described in the second half and kept up to date as modules land.
+This document records the audit of the repository before the platform build-out (section 1), the conventions applied since (section 2), the deployment order (section 3) and how each audit gap was closed (section 4).
 
 ## 1. Current state (audit)
 
@@ -94,3 +94,42 @@ flowchart TD
   aib -.-> avd
   aks --> apps["az-apps<br/>workloads on AKS"]
 ```
+
+## 4. State after the build-out
+
+```mermaid
+flowchart LR
+  subgraph tenant["Management group scope"]
+    gov["governance<br/>MG hierarchy, policy, canary"]
+  end
+  subgraph hubsub["Hub subscription"]
+    hub["az-landing-zone<br/>firewall, Bastion, DNS, monitoring, KV, budgets, Defender"]
+    aib["az-image-builder"]
+  end
+  subgraph wl["Workload subscriptions"]
+    avd["az-avd<br/>spoke + AVD"]
+    aks["az-aks<br/>spoke + private AKS"]
+  end
+  apps["az-apps<br/>Helm + Flux"]
+  gov --> hub --> avd & aks
+  aib -.image.-> avd
+  aks --> apps
+  shared["modules/<br/>naming, types, spoke, firewall rules, AVD, AKS"] -.-> hub & avd & aks
+```
+
+| Audit gap | Resolution |
+|---|---|
+| No management groups or policy | `az-landing-zone/governance`: hierarchy, placement, Microsoft built-in baseline, `DoNotEnforce` canary in staging (D-010) |
+| No diagnostic settings on platform resources | Every resource sends `allLogs` to the central workspace; DINE policy covers resources deployed outside this repository |
+| No spoke pattern | `modules/network/spoke-network` (peering, UDR to the firewall, firewall DNS proxy, NSG baseline), used by AVD and AKS |
+| Key Vault and Sentinel documented but not deployed | Platform Key Vault deployed; Sentinel onboarding behind `monitoring.enableSentinel` |
+| No data collection rules or endpoint | DCE in the private link scope, baseline Windows and Linux DCRs, AVD Insights and AKS rules |
+| No budgets, Defender, gateway or DDoS | Budgets with forecast alerts, Defender plans, optional VPN/ExpressRoute gateway and DDoS plan |
+| Only a prod parameter file | `staging` and `prod` parameter files for every deployment |
+| No firewall DNS proxy | Enabled (D-008) |
+| `az-avd` empty | Full AVD workload (D-012 to D-015) |
+| Image Builder not in CI | Offline tests run in `validate.yml` |
+| No CI, hooks or dependency updates | GitHub Actions (validate, what-if, app pipeline), GitLab CI for apps, pre-commit, Renovate |
+| Parameter styles differ | Typed parameters everywhere, shared types and naming |
+
+Not yet covered, by design or pending: `what-if` against a real subscription (needs a sandbox and the OIDC variables), enforcing image signatures in AKS, ACR cache rules to shrink the egress allowlist, and a second region.
