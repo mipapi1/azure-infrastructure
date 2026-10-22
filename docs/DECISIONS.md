@@ -36,3 +36,25 @@ Management groups follow ALZ (platform: connectivity, identity, management; land
 
 ## D-011 Defender for Cloud defaults
 prod: CSPM, Servers P2, Storage (with on-upload malware scanning and sensitive data discovery), Key Vault, Resource Manager, Containers, DNS. staging: CSPM only. Plans are a parameter so cost can be tuned per subscription.
+
+## D-012 AVD: AVM for service objects and storage, custom session host and monitoring modules
+Host pool (0.8.2), application groups (0.4.2), workspace (0.9.2), scaling plan (0.5.0), storage account (0.33.1) and virtual machine (0.22.3) come from AVM. Two local modules fill gaps:
+- `modules/avd/session-hosts` wraps the VM AVM. The AVM's `extensionHostPoolRegistration` always sets `aadJoin: true` (wrong for domain-joined hosts) and takes the registration token in a non-secure object parameter, which writes it to deployment history. The local module adds the DSC registration extension itself, reads the token with `listRegistrationTokens()` straight into protected settings, and adds the FSLogix Run Command. Replace with the AVM extension once it accepts a secure token and an `aadJoin` setting.
+- `modules/avd/monitoring` groups the AVD Insights data collection rule and the alert rules. It only composes AVM modules (data collection rule, scheduled query rule, metric alert); a future AVD monitoring pattern module would replace it.
+- `modules/network/firewall-rule-collection-group` adds one rule collection group to the hub policy. The firewall policy AVM manages every group at once, so a workload can't use it to add only its own rules.
+
+## D-013 AVD PSRule exceptions
+- `Azure.VNET.SingleDNS` is excluded repository-wide: spokes use the firewall DNS proxy, which is one IP backed by a zone-redundant firewall.
+- `Azure.VM.MaintenanceConfig` is suppressed for VMs tagged `avd-host-pool`. Pooled session hosts are patched by Windows Update during off-peak hours and replaced from new images, which is Microsoft's recommended AVD servicing model; Update Manager maintenance windows conflict with scaling plans.
+- `Azure.Storage.FileShareSoftDelete` requires exactly 7 days, so both environments use 7.
+
+## D-014 FSLogix configured by Run Command, Intune preferred when present
+Microsoft recommends Intune (settings catalog) or Group Policy for FSLogix. Entra-joined hosts have no Group Policy, and Intune isn't always available, so the module writes Microsoft's recommended profile container registry settings with a VM Run Command by default. Set `fslogix.configurationMethod: 'None'` when Intune or GPO manages FSLogix. Antimalware exclusions for FSLogix are set on the Microsoft Antimalware extension.
+
+## D-015 AVD defaults
+- Entra-joined hosts with Entra Kerberos for Azure Files, the Microsoft-recommended cloud-only design. Domain join is a parameter (`identity.mode`).
+- Host pool `publicNetworkAccess: EnabledForClientsOnly`: session hosts reach the service over private link, users connect over the internet. `Disabled` needs client private connectivity (VPN or ExpressRoute).
+- Registration token valid for four hours and refreshed on every deployment.
+- Windows 11 Enterprise multi-session 25H2 (`MicrosoftWindowsDesktop/windows-11/win11-25h2-avd`) unless a gallery image is given.
+- DSC agent configuration package pinned to `Configuration_1.0.03211.1002.zip` (confirmed to exist). Microsoft publishes newer packages; update the parameter after testing in staging.
+- Premium file shares (ZRS in prod), SMB 3.1.1 with Kerberos and AES-256 only, shared key access disabled, no default share permission (RBAC per group).
