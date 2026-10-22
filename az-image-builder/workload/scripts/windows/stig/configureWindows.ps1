@@ -520,6 +520,17 @@ foreach ($feature in @('MicrosoftWindowsPowerShellV2Root', 'MicrosoftWindowsPowe
   }
 }
 
+if ($client) {
+  # Azure VMs have no wireless hardware, so this normally finds nothing; it keeps the image compliant
+  # if a driver adds the virtual adapter.
+  Write-Output 'Windows: STIG - disable Wi-Fi Direct adapters (V-288475)'
+  Get-NetAdapter -InterfaceDescription 'Microsoft Wi-Fi Direct*' -IncludeHidden -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      Disable-NetAdapter -InputObject $_ -Confirm:$false
+      Write-Output "  disabled $($_.Name)"
+    }
+}
+
 Write-Output 'Windows: STIG - audit Other Policy Change Events'
 Invoke-Native -FilePath auditpol.exe -ArgumentList '/set', '/subcategory:"Other Policy Change Events"', '/success:enable' -Description 'auditpol'
 

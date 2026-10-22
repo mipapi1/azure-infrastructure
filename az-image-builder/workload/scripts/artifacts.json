@@ -8,10 +8,10 @@
   "artifacts": [
     {
       "name": "stig-gpo-package", "group": "windows-stig",
-      "blob": "stig/U_STIG_GPO_Package_July_2026.zip",
-      "sha256": "EED9542AAFE07C6B674A3F6F6634C4987DB45A22F2DAA9F2D9C80B6B93072DE6",
-      "destination": "C:\\Temp\\U_STIG_GPO_Package_July_2026.zip", "extractTo": "C:\\Temp\\stig",
-      "sourceUrl": "https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_July_2026.zip"
+      "blob": "stig/U_STIG_GPO_Package_October_2026.zip",
+      "sha256": "C8A093C0656CCF6D71D98A9556AA37E0F4E31574AC2AAC86F76D7D14355167BA",
+      "destination": "C:\\Temp\\U_STIG_GPO_Package_October_2026.zip", "extractTo": "C:\\Temp\\stig",
+      "sourceUrl": "https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_October_2026.zip"
     },
     {
       "name": "lgpo", "group": "windows-stig",

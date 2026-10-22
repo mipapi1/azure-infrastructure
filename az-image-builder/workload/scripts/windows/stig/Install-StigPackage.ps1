@@ -10,7 +10,8 @@
         (before sysprep, and on each VM at deploy time).
       - $Dropped settings: set differently by configureWindows.ps1.
       - Domain principals and "ADD YOUR ..." placeholders in user rights (images are not domain-joined at
-        build time). Principal names are mapped to SIDs ($PrincipalSids) so they resolve off-domain.
+        build time). Principal names are mapped to SIDs ($PrincipalSids) so they resolve off-domain, and
+        SIDs listed without the leading '*' get one.
     Prerequisites (artifact group 'windows-stig'): the package in -StigRoot, LGPO.exe at -LgpoPath.
 #>
 [CmdletBinding()]
@@ -183,6 +184,9 @@ try {
                     $members = @($Matches[2] -split ',' | ForEach-Object { $_.Trim() } |
                         Where-Object { $_ -and $_ -notmatch $DropPrincipalPattern } |
                         ForEach-Object { if ($PrincipalSids.ContainsKey($_)) { $PrincipalSids[$_] } else { $_ } } |
+                        # secedit reads a SID without the leading '*' as an account name. Some packages (Windows 11
+                        # v2r11, the Protected Print service SID in SeImpersonatePrivilege) list one that way.
+                        ForEach-Object { if ($_ -match '^S-1-\d+(-\d+)+$') { "*$_" } else { $_ } } |
                         Select-Object -Unique)
                     $withhold = @($Deferred.PrivilegeSids[$right] | Where-Object { $_ -and $_ -in $members })
                     if ($withhold.Count -gt 0) {
