@@ -1,0 +1,31 @@
+# The chart comes from this repository (the Flux GitRepository created by
+# az-aks). CI promotes an image by changing image.digest in values-staging.yaml.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: web-app
+  namespace: web
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./az-apps/charts/web-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: cluster-config
+        namespace: flux-system
+      valuesFiles:
+        - ./az-apps/charts/web-app/values.yaml
+        - ./az-apps/charts/web-app/values-staging.yaml
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    image:
+      repository: ${REGISTRY_LOGIN_SERVER}/web-app
