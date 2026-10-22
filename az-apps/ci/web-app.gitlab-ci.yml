@@ -1,0 +1,114 @@
+# GitLab pipeline for the sample application, the GitLab equivalent of
+# .github/workflows/web-app.yml. Included from the root .gitlab-ci.yml.
+#
+# CI/CD variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID and
+# REGISTRY_NAME (scoped per environment), GITLAB_TOKEN (project access token,
+# api scope, for promotion merge requests). PUBLISH_RUNNER_TAG selects a
+# runner that can reach the private registry.
+
+variables:
+  IMAGE_NAME: web-app
+  DOCKER_IMAGE: docker:29.9.2
+  DIND_IMAGE: docker:29.9.2-dind
+  TRIVY_IMAGE: aquasec/trivy:0.75.0
+  AZURE_CLI_IMAGE: mcr.microsoft.com/azure-cli:2.91.0
+  COSIGN_VERSION: v3.1.4
+  CRANE_VERSION: v0.22.1
+
+stages: [build, scan, publish, promote]
+
+.web-app-rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: [az-apps/src/web-app/**/*, az-apps/ci/web-app.gitlab-ci.yml]
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: [az-apps/src/web-app/**/*, az-apps/ci/web-app.gitlab-ci.yml]
+
+.main-only:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: [az-apps/src/web-app/**/*, az-apps/ci/web-app.gitlab-ci.yml]
+
+web-app:build:
+  stage: build
+  extends: .web-app-rules
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: /certs
+  script:
+    - docker build az-apps/src/web-app
+        --label org.opencontainers.image.source="$CI_PROJECT_URL"
+        --label org.opencontainers.image.revision="$CI_COMMIT_SHA"
+        --tag "$IMAGE_NAME:$CI_COMMIT_SHA"
+    - docker save "$IMAGE_NAME:$CI_COMMIT_SHA" -o image.tar
+  artifacts:
+    paths: [image.tar]
+    expire_in: 1 day
+
+web-app:scan:
+  stage: scan
+  extends: .web-app-rules
+  needs: [web-app:build]
+  image:
+    name: $TRIVY_IMAGE
+    entrypoint: [""]
+  script:
+    - trivy image --input image.tar --format template --template "@/contrib/gitlab.tpl" --output gl-container-scanning-report.json
+    - trivy image --input image.tar --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+web-app:publish:
+  stage: publish
+  extends: .main-only
+  needs: [web-app:build, web-app:scan]
+  environment: staging
+  tags: ["$PUBLISH_RUNNER_TAG"]
+  image: $AZURE_CLI_IMAGE
+  id_tokens:
+    AZURE_ID_TOKEN:
+      aud: api://AzureADTokenExchange
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  script:
+    - az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$AZURE_ID_TOKEN" --output none
+    - az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+    - curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin crane
+    - curl -fsSL -o /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" && chmod +x /usr/local/bin/cosign
+    # The registry has no admin user; push with a short-lived Entra token (ACR's fixed token user name).
+    - server="$(az acr show --name "$REGISTRY_NAME" --query loginServer -o tsv)"
+    - az acr login --name "$REGISTRY_NAME" --expose-token --query accessToken -o tsv | crane auth login "$server" --username 00000000-0000-0000-0000-000000000000 --password-stdin
+    - crane push image.tar "$server/$IMAGE_NAME:$CI_COMMIT_SHA"
+    - digest="$(crane digest "$server/$IMAGE_NAME:$CI_COMMIT_SHA")"
+    - cosign sign --yes "$server/$IMAGE_NAME@$digest"
+    - echo "DIGEST=$digest" > publish.env
+  artifacts:
+    reports:
+      dotenv: publish.env
+
+web-app:promote-staging:
+  stage: promote
+  extends: .main-only
+  needs: [web-app:publish]
+  image: $AZURE_CLI_IMAGE
+  script:
+    - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - az-apps/ci/promote.sh staging "$DIGEST"
+
+web-app:promote-prod:
+  stage: promote
+  extends: .main-only
+  needs: [web-app:publish, web-app:promote-staging]
+  # Protected environment with required approvals is the promotion gate.
+  environment: prod
+  when: manual
+  image: $AZURE_CLI_IMAGE
+  script:
+    - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git fetch origin "$CI_DEFAULT_BRANCH" && git checkout -B prod-promotion "origin/$CI_DEFAULT_BRANCH"
+    - az-apps/ci/promote.sh prod "$DIGEST"

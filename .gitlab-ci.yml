@@ -1,0 +1,4 @@
+# GitLab CI entry point. Infrastructure validation runs in GitHub Actions
+# (.github/workflows); the application pipeline runs in either system.
+include:
+  - local: az-apps/ci/web-app.gitlab-ci.yml
