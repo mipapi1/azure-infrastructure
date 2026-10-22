@@ -89,4 +89,31 @@ az deployment sub create --location eastus --name landing-zone \
 ## Parameters
 
 <!-- BEGIN_PARAMS -->
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `environment` | environmentType | yes |  | Environment. Drives SKU, redundancy, retention and lock defaults. |
+| `location` | string | yes |  | Region for every regional resource. |
+| `workload` | string | no | `"hub"` | Workload name used in resource names. |
+| `tags` | tagsType | yes |  | Tags applied to every resource. |
+| `network` | hubNetworkType | yes |  | Hub network layout. |
+| `firewall` | firewallType | no | `{}` | Azure Firewall settings. |
+| `bastionSku` | `Basic` \| `Premium` \| `Standard` | no | `"Standard"` | Bastion SKU. Defaults to Standard. |
+| `gateway` | gatewayType | no | `{"type":"None"}` | Hybrid connectivity gateway. Defaults to none. |
+| `enableDdosProtection` | bool | no | `false` | Deploy a DDoS Network Protection plan and associate it with the hub. Defaults to false (the plan has a significant fixed monthly cost). |
+| `monitoring` | monitoringType | no | `{}` | Central monitoring settings. |
+| `keyVault` | keyVaultType | no | `{}` | Platform Key Vault settings. |
+| `budget` | budgetType | no |  | Monthly budget. Omit to skip. |
+| `defender` | defenderType | no |  | Microsoft Defender for Cloud settings. Omit to leave Defender unchanged. |
+| `additionalPrivateDnsZones` | string[] | no | `[]` | Private DNS zones in addition to the defaults (Azure Monitor, Key Vault, Storage, AVD, ACR, AKS, Grafana). |
+| `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
+| `deploymentTime` | string | no | computed | Generated. Do not set. Used for the budget start date. |
+
+| Output | Type | Description |
+|---|---|---|
+| `hub` | hubReferenceType | Hub reference for spoke deployments (hubReferenceType). |
+| `monitoring` | monitoringReferenceType | Monitoring reference for workload deployments (monitoringReferenceType). |
+| `firewallPolicyResourceId` | string | Resource ID of the hub firewall policy. Workloads add their own rule collection groups to it. |
+| `vmDataCollectionRuleResourceIds` | object | Resource IDs of the baseline VM data collection rules, keyed by OS. |
+| `keyVaultResourceId` | string | Resource ID of the platform Key Vault, empty when disabled. |
+| `encryptionIdentityResourceId` | string | Resource ID of the user-assigned identity used for customer-managed key access. |
 <!-- END_PARAMS -->

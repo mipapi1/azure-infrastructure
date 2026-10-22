@@ -110,4 +110,35 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 ## Parameters
 
 <!-- BEGIN_PARAMS -->
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `environment` | environmentType | yes |  | Environment. |
+| `location` | string | yes |  | Region for every regional resource. Also the metadata location of the host pool, application groups and workspace. |
+| `workload` | string | no | `"avd"` | Workload name used in resource names. Use a different value per host pool. |
+| `tags` | tagsType | yes |  | Tags applied to every resource. |
+| `hub` | hubReferenceType | yes |  | Hub connection details (az-landing-zone output "hub"). |
+| `monitoring` | monitoringReferenceType | yes |  | Central monitoring (az-landing-zone output "monitoring"). |
+| `baselineDataCollectionRuleResourceId` | string | no | `""` | Baseline Windows VM data collection rule (az-landing-zone output vmDataCollectionRuleResourceIds.windows). |
+| `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, the AVD egress rules are added to it. |
+| `firewallRulePriority` | int | no | `1000` | Priority of the AVD rule collection group in the hub firewall policy. |
+| `network` | avdNetworkType | yes |  | Spoke network. |
+| `hostPool` | hostPoolType | no | `{}` | Host pool settings. |
+| `sessionHosts` | sessionHostsType | yes |  | Session hosts. |
+| `sessionHostAdminPassword` | string (secure) | yes |  | Local administrator password for the session hosts. Pass it from Key Vault (az.getSecret) or an environment variable; never commit it. |
+| `identity` | identityType | yes |  | Identity and access. |
+| `domainJoinPassword` | string (secure) | no | `""` | Password of the domain join account (DomainJoined only). |
+| `fslogix` | fslogixType | no | `{}` | FSLogix profile storage and configuration. |
+| `applicationGroups` | applicationGroupType[] | no | see template | Application groups. Defaults to one desktop application group. |
+| `workspaceFriendlyName` | string | no | `"Virtual Desktop"` | Workspace friendly name. |
+| `scaling` | scalingType | no | `{}` | Scaling plan settings. |
+| `enableAlerts` | bool | no | `true` | Email-free alerting: alerts use the landing zone action group from monitoring.actionGroupResourceId. |
+| `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
+
+| Output | Type | Description |
+|---|---|---|
+| `hostPoolResourceId` | string | Resource ID of the host pool. |
+| `workspaceResourceId` | string | Resource ID of the workspace. |
+| `sessionHostNames` | string[] | Session host names. |
+| `profileStorageAccountResourceId` | string | Resource ID of the FSLogix storage account, empty when disabled. |
+| `virtualNetworkResourceId` | string | Resource ID of the spoke virtual network. |
 <!-- END_PARAMS -->

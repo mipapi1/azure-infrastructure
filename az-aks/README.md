@@ -122,4 +122,34 @@ Grant namespace-scoped access with Azure Kubernetes Service RBAC Writer at `<clu
 ## Parameters
 
 <!-- BEGIN_PARAMS -->
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `environment` | environmentType | yes |  | Environment. |
+| `location` | string | yes |  | Region for every resource. |
+| `workload` | string | no | `"aks"` | Workload name used in resource names. |
+| `tags` | tagsType | yes |  | Tags applied to every resource. |
+| `hub` | hubReferenceType | yes |  | Hub connection details (az-landing-zone output "hub"). |
+| `monitoring` | monitoringReferenceType | yes |  | Central monitoring (az-landing-zone output "monitoring"). The data collection endpoint is required for private ingestion. |
+| `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, the AKS egress rules are added to it. |
+| `firewallRulePriority` | int | no | `1100` | Priority of the AKS rule collection group in the hub firewall policy. |
+| `allowedEgressFqdns` | string[] | no | `[]` | Extra FQDNs the nodes may reach over HTTPS, for example Git hosting or public chart and image registries that are not mirrored into the registry. |
+| `network` | aksNetworkType | yes |  | Spoke network. |
+| `cluster` | clusterType | yes |  | Cluster and node pools. |
+| `access` | accessType | yes |  | Access. |
+| `gitOps` | gitOpsType | no |  | GitOps with the Flux extension. Leave empty to manage workloads another way. |
+| `aksMonitoring` | aksMonitoringType | no | `{}` | Monitoring options. |
+| `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
+
+| Output | Type | Description |
+|---|---|---|
+| `clusterResourceId` | string | Resource ID of the cluster. |
+| `clusterName` | string | Name of the cluster. |
+| `clusterResourceGroupName` | string | Resource group of the cluster. |
+| `oidcIssuerUrl` | string | OIDC issuer URL for workload identity federation. |
+| `registryLoginServer` | string | Login server of the container registry. |
+| `registryName` | string | Name of the container registry. |
+| `keyVaultUri` | string | URI of the workload key vault. |
+| `externalSecretsClientId` | string | Client ID of the External Secrets identity (service account annotation azure.workload.identity/client-id). |
+| `monitorWorkspaceResourceId` | string | Resource ID of the Azure Monitor workspace. |
+| `grafanaResourceId` | string | Resource ID of Managed Grafana. |
 <!-- END_PARAMS -->
