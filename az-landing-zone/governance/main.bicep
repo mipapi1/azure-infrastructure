@@ -241,6 +241,8 @@ module policyAssignments 'br/public:avm/ptn/authorization/policy-assignment:0.5.
     params: {
       name: a.name
       displayName: a.displayName
+      description: '${a.displayName}. Part of the platform governance baseline.'
+      metadata: { assignedBy: 'Platform governance (az-landing-zone/governance)' }
       policyDefinitionId: a.definitionId
       parameters: a.parameters
       identity: empty(a.roles) ? 'None' : 'SystemAssigned'
