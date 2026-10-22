@@ -58,3 +58,23 @@ Microsoft recommends Intune (settings catalog) or Group Policy for FSLogix. Entr
 - Windows 11 Enterprise multi-session 25H2 (`MicrosoftWindowsDesktop/windows-11/win11-25h2-avd`) unless a gallery image is given.
 - DSC agent configuration package pinned to `Configuration_1.0.03211.1002.zip` (confirmed to exist). Microsoft publishes newer packages; update the parameter after testing in staging.
 - Premium file shares (ZRS in prod), SMB 3.1.1 with Kerberos and AES-256 only, shared key access disabled, no default share permission (RBAC per group).
+
+## D-016 AKS network: private cluster, CNI Overlay with Cilium, UDR egress
+Azure CNI Overlay powered by Cilium is Microsoft's recommended networking for new clusters: pods don't consume VNet addresses, and Cilium provides the data plane and network policy (Azure Network Policy Manager is being retired). The API server is private with the zone in the hub, so every spoke resolves it the same way; a user-assigned control plane identity gets Private DNS Zone Contributor on that zone and Network Contributor on the VNet and route table before the cluster is created. Egress uses `userDefinedRouting` to the hub firewall. Pod `192.168.0.0/16` and service `172.16.0.0/16` ranges stay outside the `10.0.0.0/8` space the landing zone allocates from. API server VNet integration was not used because private cluster with private link is generally available in every region and matches the rest of the platform.
+
+## D-017 AKS identity and access
+Entra ID with Azure RBAC for Kubernetes authorization and local accounts disabled, so all access is through Entra groups and auditable in the Activity Log. Workload identity (with the OIDC issuer) is the only way pods get Azure tokens; pod-managed identity is deprecated. The kubelet identity is user-assigned so AcrPull can be granted before the cluster exists. The node resource group is read-only.
+
+## D-018 AKS add-ons and exceptions
+- Flux through the AKS GitOps extension rather than Argo CD: it is a Microsoft-supported extension, deployed and upgraded with the cluster, and the `fluxConfigurations` resource keeps the bootstrap in Bicep.
+- External Secrets Operator (workload identity, one ClusterSecretStore gated by a namespace label) syncs Key Vault into Kubernetes secrets for charts that expect them. The Key Vault CSI driver add-on stays on for workloads that mount secrets as files.
+- cert-manager with an internal CA issuer by default; public certificates need an ACME issuer with DNS validation, which depends on the DNS provider and is left to the consumer.
+- Application routing (managed NGINX) with an internal load balancer as default ingress, KEDA, Azure Policy, image cleaner and Defender for Containers are on. AKS Backup and Istio are not deployed: both add components that only some workloads need.
+- PSRule exceptions: `Azure.AKS.NetworkPolicy` (the rule doesn't recognise Cilium), `Azure.ACR.GeoReplica` (single region until a second region exists), and zones and uptime SLA in staging (`Azure.AKS.AvailabilityZone`, `Azure.AKS.UptimeSLA`, `Azure.Grafana.AvailabilityZone`) for cost.
+- The Flux configuration is named `cluster-config` through a property the AVM extension module reads but leaves out of its type, so the Bicep line suppresses BCP037.
+
+## D-019 AKS monitoring module
+There is no AVM module for Azure Monitor workspaces, Managed Grafana or Prometheus rule groups, so `modules/aks/monitoring` declares them and uses AVM for the data collection rules and private endpoints. Ingestion goes through the landing zone data collection endpoint (in the private link scope); the workspace and Grafana have public access disabled, and Grafana reaches the workspace through a managed private endpoint. The recording rules are the subset of Microsoft's defaults that the built-in Grafana Kubernetes dashboards need, and the alert rules cover node readiness, crash loops, OOM kills, replica mismatches, CPU and volume space.
+
+## D-020 AKS egress allowlist
+The `AzureKubernetesService` FQDN tag covers the cluster's own requirements. Git hosting and public chart and image registries (Flux, External Secrets, cert-manager) are allowed by explicit FQDNs in the parameter files until images are mirrored into the registry. Mirroring through ACR cache rules is the recommended next step and removes those entries.
