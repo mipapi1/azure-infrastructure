@@ -52,7 +52,12 @@ probe() {
 }
 
 log "allowed namespace reaches the service"
-code="$(probe smoke || true)"
+# Endpoints and policies are programmed shortly after the rollout; retry briefly.
+for attempt in 1 2 3 4 5 6; do
+  code="$(probe smoke || true)"
+  [ "$code" = "200" ] && break
+  sleep 5
+done
 if [ "$code" != "200" ]; then
   echo "expected 200 from namespace smoke, got '$code'" >&2
   kubectl -n web get pods,svc,networkpolicy -o wide >&2

@@ -34,7 +34,7 @@ Flux applies `platform/overlays/<env>` and then `deploy/<env>` (see `az-aks/gito
 | Concern | Default |
 |---|---|
 | Image | `repository@sha256:digest` only; the chart fails without a digest |
-| Security context | non-root UID 101, read-only root file system, all capabilities dropped, `RuntimeDefault` seccomp, no privilege escalation |
+| Security context | non-root UID 10101 (`runAsUser`), read-only root file system, all capabilities dropped, `RuntimeDefault` seccomp, no privilege escalation |
 | Service account | own account, token not mounted unless workload identity is used |
 | Probes | startup, readiness and liveness on `/healthz` |
 | Availability | rolling update with `maxUnavailable: 0`, zone and node topology spread, PDB, HPA on CPU |

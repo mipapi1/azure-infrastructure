@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "web-app.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "web-app.labels" . | nindent 4 }}
 spec:
@@ -29,9 +30,9 @@ spec:
       automountServiceAccountToken: {{ not (empty .Values.serviceAccount.workloadIdentityClientId) }}
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
+        runAsUser: {{ .Values.runAsUser }}
+        runAsGroup: {{ .Values.runAsUser }}
+        fsGroup: {{ .Values.runAsUser }}
         seccompProfile:
           type: RuntimeDefault
       topologySpreadConstraints:

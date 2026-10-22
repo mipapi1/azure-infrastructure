@@ -18,3 +18,5 @@ download-external-modules: false
 skip-check:
   # Tooling image is a CLI, not a long-running service.
   - CKV_DOCKER_2
+  # CPU limits throttle workloads; charts set CPU requests and memory limits (D-023).
+  - CKV_K8S_11

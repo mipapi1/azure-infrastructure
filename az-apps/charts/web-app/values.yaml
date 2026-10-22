@@ -11,6 +11,10 @@ replicaCount: 2
 
 containerPort: 8080
 
+# UID and GID for the pod. High values avoid overlap with host accounts; the image must
+# not depend on a fixed UID (the sample image runs as any UID).
+runAsUser: 10101
+
 serviceAccount:
   create: true
   # Client ID of a user-assigned identity federated to this service account.
