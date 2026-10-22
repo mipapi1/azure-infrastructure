@@ -1,0 +1,13 @@
+# Values from the az-aks deployment outputs, substituted into the manifests
+# by Flux (postBuild.substituteFrom). Placeholders until the cluster exists.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-settings
+  namespace: flux-system
+data:
+  ENVIRONMENT: prod
+  AZURE_TENANT_ID: "<tenant-id>"
+  KEY_VAULT_URI: "https://<key-vault-name>.vault.azure.net/"
+  EXTERNAL_SECRETS_CLIENT_ID: "<external-secrets-client-id>"
+  REGISTRY_LOGIN_SERVER: "<registry-name>.azurecr.io"

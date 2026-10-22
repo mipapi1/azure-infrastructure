@@ -1,0 +1,33 @@
+# Internal CA for service and ingress certificates. A self-signed root signs
+# the CA certificate, and the CA issuer signs everything else.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: platform-internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: platform-internal-ca
+  secretName: platform-internal-ca
+  duration: 87600h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned-bootstrap
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: platform-internal
+spec:
+  ca:
+    secretName: platform-internal-ca

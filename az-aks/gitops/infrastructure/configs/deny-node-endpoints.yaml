@@ -1,0 +1,26 @@
+# Blocks the instance metadata service (169.254.169.254) and the Azure host
+# endpoint (168.63.129.16) for workload pods. IMDS hands out tokens for the
+# kubelet identity, which can pull from the registry; workloads use workload
+# identity instead, which never calls IMDS.
+#
+# kube-system is excluded: CoreDNS forwards to 168.63.129.16 and managed
+# add-ons call IMDS. The policy only adds deny rules; it does not put pods
+# into default deny.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: deny-azure-node-endpoints
+spec:
+  description: Block IMDS and the Azure host endpoint for workload pods.
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: NotIn
+        values: [kube-system]
+  enableDefaultDeny:
+    egress: false
+    ingress: false
+  egressDeny:
+    - toCIDR:
+        - 169.254.169.254/32
+        - 168.63.129.16/32

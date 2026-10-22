@@ -1,0 +1,8 @@
+# Entry point for the staging cluster. The Flux extension created by az-aks
+# applies this directory; it defines the ordered Flux Kustomizations below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster-settings.yaml
+  - infrastructure.yaml
+  - apps.yaml
