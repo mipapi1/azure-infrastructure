@@ -36,6 +36,21 @@ suppression:
   # D-005: image builder content storage, reproducible from the publish tools.
   Azure.Storage.UseReplication:
     - aibprodeusst
+  # D-007: staging runs without zones or workspace replication to save cost.
+  Azure.Firewall.AvailabilityZone:
+    - hub-staging-eus-afw
+  Azure.PublicIP.AvailabilityZone:
+    - hub-staging-eus-afw-pip
+  Azure.Log.Replication:
+    - hub-staging-eus-law
+  # D-007: AVM key vault 'keys' holds key definitions, not secret values.
+  Azure.Deployment.SecureParameter:
+    - hub-prod-eus-kv-deploy
+    - hub-staging-eus-kv-deploy
+  # D-007: Bastion must reach VMs on 22/3389; that is its purpose.
+  Azure.NSG.LateralTraversal:
+    - hub-prod-eus-vnet-AzureBastionSubnet-nsg
+    - hub-staging-eus-vnet-AzureBastionSubnet-nsg
 
 output:
   culture:
