@@ -14,7 +14,7 @@ param virtualNetworkResourceId string
 param firewallPolicyId string
 
 @description('Firewall SKU tier — must match the firewall policy tier')
-@allowed([ 'Standard', 'Premium' ])
+@allowed(['Standard', 'Premium'])
 param azureSkuTier string = 'Standard'
 
 module firewall 'br/public:avm/res/network/azure-firewall:0.10.0' = {

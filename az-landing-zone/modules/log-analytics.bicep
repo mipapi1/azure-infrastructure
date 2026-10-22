@@ -8,7 +8,7 @@ param location string
 param tags object = {}
 
 @description('SKU name')
-@allowed([ 'PerGB2018', 'CapacityReservation', 'LACluster', 'PerNode', 'Premium', 'Standalone', 'Standard' ])
+@allowed(['PerGB2018', 'CapacityReservation', 'LACluster', 'PerNode', 'Premium', 'Standalone', 'Standard'])
 param skuName string = 'PerGB2018'
 
 @description('Data retention in days (30-730)')
@@ -20,18 +20,18 @@ param retentionInDays int = 90
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 @description('Role assignments on the workspace')
 param roleAssignments array = []
 
 @description('Public network access for log ingestion')
-@allowed([ 'Enabled', 'Disabled' ])
+@allowed(['Enabled', 'Disabled'])
 param publicNetworkAccessForIngestion string = 'Enabled'
 
 @description('Public network access for queries')
-@allowed([ 'Enabled', 'Disabled' ])
+@allowed(['Enabled', 'Disabled'])
 param publicNetworkAccessForQuery string = 'Enabled'
 
 module law 'br/public:avm/res/operational-insights/workspace:0.15.0' = {

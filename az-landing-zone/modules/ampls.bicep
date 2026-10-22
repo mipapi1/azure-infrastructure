@@ -14,7 +14,7 @@ param privateEndpointSubnetResourceId string
 param privateDnsZoneResourceIds array
 
 param enableLock bool = false
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 module ampls 'br/public:avm/res/insights/private-link-scope:0.7.0' = {
@@ -35,9 +35,11 @@ module ampls 'br/public:avm/res/insights/private-link-scope:0.7.0' = {
         name: '${name}-pe'
         subnetResourceId: privateEndpointSubnetResourceId
         privateDnsZoneGroup: {
-          privateDnsZoneGroupConfigs: [for zoneId in privateDnsZoneResourceIds: {
-            privateDnsZoneResourceId: zoneId
-          }]
+          privateDnsZoneGroupConfigs: [
+            for zoneId in privateDnsZoneResourceIds: {
+              privateDnsZoneResourceId: zoneId
+            }
+          ]
         }
       }
     ]

@@ -13,7 +13,7 @@ param tags object = {}
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 @description('Role assignments to apply at the resource group scope')
@@ -24,10 +24,12 @@ module rg 'br/public:avm/res/resources/resource-group:0.4.3' = {
     name: name
     location: location
     tags: tags
-    lock: enableLock ? {
-      kind: lockKind
-      name: 'lock-${name}'
-    } : null
+    lock: enableLock
+      ? {
+          kind: lockKind
+          name: 'lock-${name}'
+        }
+      : null
     roleAssignments: roleAssignments
   }
 }

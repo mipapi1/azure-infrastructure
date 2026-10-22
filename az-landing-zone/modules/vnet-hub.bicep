@@ -26,7 +26,7 @@ param privateEndpointSubnetPrefix string = ''
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 module vnet 'br/public:avm/res/network/virtual-network:0.9.0' = {
@@ -35,7 +35,7 @@ module vnet 'br/public:avm/res/network/virtual-network:0.9.0' = {
     name: name
     location: location
     tags: tags
-    addressPrefixes: [ addressPrefix ]
+    addressPrefixes: [addressPrefix]
     lock: enableLock ? { kind: lockKind, name: 'lock-${name}' } : null
     subnets: concat(
       [
@@ -52,13 +52,15 @@ module vnet 'br/public:avm/res/network/virtual-network:0.9.0' = {
           addressPrefix: gatewaySubnetPrefix
         }
       ],
-      !empty(privateEndpointSubnetPrefix) ? [
-        {
-          name: 'PrivateEndpointSubnet'
-          addressPrefix: privateEndpointSubnetPrefix
-          privateEndpointNetworkPolicies: 'Disabled'
-        }
-      ] : []
+      !empty(privateEndpointSubnetPrefix)
+        ? [
+            {
+              name: 'PrivateEndpointSubnet'
+              addressPrefix: privateEndpointSubnetPrefix
+              privateEndpointNetworkPolicies: 'Disabled'
+            }
+          ]
+        : []
     )
   }
 }
@@ -68,4 +70,6 @@ output vnetName string = vnet.outputs.name
 output firewallSubnetResourceId string = '${vnet.outputs.resourceId}/subnets/AzureFirewallSubnet'
 output bastionSubnetResourceId string = '${vnet.outputs.resourceId}/subnets/AzureBastionSubnet'
 output gatewaySubnetResourceId string = '${vnet.outputs.resourceId}/subnets/GatewaySubnet'
-output privateEndpointSubnetResourceId string = !empty(privateEndpointSubnetPrefix) ? '${vnet.outputs.resourceId}/subnets/PrivateEndpointSubnet' : ''
+output privateEndpointSubnetResourceId string = !empty(privateEndpointSubnetPrefix)
+  ? '${vnet.outputs.resourceId}/subnets/PrivateEndpointSubnet'
+  : ''

@@ -11,7 +11,7 @@ param tags object = {}
 param virtualNetworkResourceId string
 
 @description('Bastion SKU — Standard enables tunneling, file copy, and shareable links')
-@allowed([ 'Basic', 'Standard', 'Premium' ])
+@allowed(['Basic', 'Standard', 'Premium'])
 param skuName string = 'Standard'
 
 module bastion 'br/public:avm/res/network/bastion-host:0.8.0' = {

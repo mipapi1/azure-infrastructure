@@ -47,32 +47,36 @@ var usePrivateNetworking = (logging.?publicNetworkAccessForIngestion ?? 'Enabled
 // module deployments //
 ////////////////////////
 
-module hubResourceGroups 'modules/resource-groups.bicep' = [for r in resourceGroups: {
-  name: 'deploy-${r.name}'
-  params: {
-    name: r.name
-    location: location
-    tags: tags
-    enableLock: r.?enableLock ?? false
-    lockKind: r.?lockKind ?? 'CanNotDelete'
-    roleAssignments: r.?roleAssignments ?? []
+module hubResourceGroups 'modules/resource-groups.bicep' = [
+  for r in resourceGroups: {
+    name: 'deploy-${r.name}'
+    params: {
+      name: r.name
+      location: location
+      tags: tags
+      enableLock: r.?enableLock ?? false
+      lockKind: r.?lockKind ?? 'CanNotDelete'
+      roleAssignments: r.?roleAssignments ?? []
+    }
   }
-}]
+]
 
-module hubIdentities 'modules/user-assigned-identity.bicep' = [for u in userAssignedIdentities: {
-  name: 'deploy-${u.name}'
-  scope: resourceGroup(u.resourceGroupName)
-  params: {
-    name: u.name
-    location: location
-    tags: tags
-    enableLock: u.?enableLock ?? false
-    lockKind: u.?lockKind ?? 'CanNotDelete'
-    roleAssignments: u.?roleAssignments ?? []
-    federatedIdentityCredentials: u.?federatedIdentityCredentials ?? []
+module hubIdentities 'modules/user-assigned-identity.bicep' = [
+  for u in userAssignedIdentities: {
+    name: 'deploy-${u.name}'
+    scope: resourceGroup(u.resourceGroupName)
+    params: {
+      name: u.name
+      location: location
+      tags: tags
+      enableLock: u.?enableLock ?? false
+      lockKind: u.?lockKind ?? 'CanNotDelete'
+      roleAssignments: u.?roleAssignments ?? []
+      federatedIdentityCredentials: u.?federatedIdentityCredentials ?? []
+    }
+    dependsOn: [hubResourceGroups]
   }
-  dependsOn: [hubResourceGroups]
-}]
+]
 
 module hubVnet 'modules/vnet-hub.bicep' = {
   name: 'deploy-${vnet.name}'
@@ -176,11 +180,36 @@ module hubAmpls 'modules/ampls.bicep' = if (usePrivateNetworking) {
     lawResourceId: hubLogging.outputs.resourceId
     privateEndpointSubnetResourceId: hubVnet.outputs.privateEndpointSubnetResourceId
     privateDnsZoneResourceIds: [
-      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.monitor.azure.com')
-      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.oms.opinsights.azure.com')
-      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.ods.opinsights.azure.com')
-      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.agentsvc.azure-automation.net')
-      resourceId(subscription().subscriptionId, privateDns.resourceGroupName, 'Microsoft.Network/privateDnsZones', 'privatelink.blob.${environment().suffixes.storage}')
+      resourceId(
+        subscription().subscriptionId,
+        privateDns.resourceGroupName,
+        'Microsoft.Network/privateDnsZones',
+        'privatelink.monitor.azure.com'
+      )
+      resourceId(
+        subscription().subscriptionId,
+        privateDns.resourceGroupName,
+        'Microsoft.Network/privateDnsZones',
+        'privatelink.oms.opinsights.azure.com'
+      )
+      resourceId(
+        subscription().subscriptionId,
+        privateDns.resourceGroupName,
+        'Microsoft.Network/privateDnsZones',
+        'privatelink.ods.opinsights.azure.com'
+      )
+      resourceId(
+        subscription().subscriptionId,
+        privateDns.resourceGroupName,
+        'Microsoft.Network/privateDnsZones',
+        'privatelink.agentsvc.azure-automation.net'
+      )
+      resourceId(
+        subscription().subscriptionId,
+        privateDns.resourceGroupName,
+        'Microsoft.Network/privateDnsZones',
+        'privatelink.blob.${environment().suffixes.storage}'
+      )
     ]
     enableLock: ampls.?enableLock ?? false
     lockKind: ampls.?lockKind ?? 'CanNotDelete'

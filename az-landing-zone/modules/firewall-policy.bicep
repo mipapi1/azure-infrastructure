@@ -8,11 +8,11 @@ param location string
 param tags object = {}
 
 @description('Policy tier — must match the Azure Firewall SKU tier')
-@allowed([ 'Standard', 'Premium' ])
+@allowed(['Standard', 'Premium'])
 param tier string = 'Standard'
 
 @description('Threat intelligence mode')
-@allowed([ 'Alert', 'Deny', 'Off' ])
+@allowed(['Alert', 'Deny', 'Off'])
 param threatIntelMode string = 'Alert'
 
 @description('Rule collection groups — loaded from config/firewall-rules.json')
