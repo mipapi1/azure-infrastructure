@@ -78,3 +78,14 @@ There is no AVM module for Azure Monitor workspaces, Managed Grafana or Promethe
 
 ## D-020 AKS egress allowlist
 The `AzureKubernetesService` FQDN tag covers the cluster's own requirements. Git hosting and public chart and image registries (Flux, External Secrets, cert-manager) are allowed by explicit FQDNs in the parameter files until images are mirrored into the registry. Mirroring through ACR cache rules is the recommended next step and removes those entries.
+
+## D-021 Application delivery: one chart, promotion by digest through Git
+Applications are Helm charts reconciled by Flux `HelmRelease` objects that read the chart from this repository, so the chart, its values and the deployed digest are all versioned together. CI never talks to the cluster: it pushes a signed image and opens a pull or merge request that changes `image.digest` in `values-<env>.yaml`. Tags are mutable, so the chart refuses anything but a digest. Staging promotion is automatic up to the request; prod needs an approval on a protected environment. The same steps exist for GitHub Actions and GitLab CI.
+
+## D-022 Image supply chain
+- Build with BuildKit and attach an SBOM and max-mode provenance on GitHub; scan with Trivy and fail on fixable high and critical findings, uploading results to the platform's security view (GitHub code scanning, GitLab container scanning report).
+- Push with workload identity federation (no registry passwords or admin user). The registry is private, so pushing needs a runner with network access to it; build and scan don't.
+- Sign keyless with cosign and the CI OIDC identity; no signing keys to store or rotate. Enforcing signatures in the cluster (Ratify with Azure Policy, or a Kyverno policy) is the next step and is not deployed yet.
+
+## D-023 Namespace guardrails
+Each application namespace enforces Pod Security `restricted`, has a ResourceQuota (no LoadBalancer or NodePort services) and a LimitRange, and starts from default-deny ingress and egress with only DNS allowed. Workloads add narrow allow rules in their chart. Kubernetes NetworkPolicy is used rather than Cilium-specific policy so the same manifests run on kind for the smoke test.
