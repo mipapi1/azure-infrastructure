@@ -9,6 +9,9 @@ ARG PSRULE_AZURE_VERSION=1.47.0
 ARG KUBECONFORM_VERSION=0.8.0
 ARG HELM_VERSION=3.22.0
 ARG KUSTOMIZE_VERSION=5.8.1
+ARG KIND_VERSION=0.33.0
+ARG KUBECTL_VERSION=1.34.12
+ARG DOCKER_CLI_VERSION=29.9.2
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git make python3 \
@@ -32,6 +35,14 @@ RUN pwsh -NoProfile -Command " \
       Set-PSRepository PSGallery -InstallationPolicy Trusted; \
       Install-Module PSRule.Rules.Azure -RequiredVersion ${PSRULE_AZURE_VERSION} -Scope AllUsers -Force -SkipPublisherCheck; \
       Get-Module -ListAvailable PSRule* | Format-Table Name, Version"
+
+# Local smoke test: kind drives the host Docker engine through its socket.
+RUN curl -fsSL -o /usr/local/bin/kind "https://github.com/kubernetes-sigs/kind/releases/download/v${KIND_VERSION}/kind-linux-amd64" \
+ && curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+ && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+      | tar -xz -C /tmp docker/docker \
+ && mv /tmp/docker/docker /usr/local/bin/docker && rm -rf /tmp/docker \
+ && chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
 
 ENV PSRULE_AZURE_BICEP_PATH=/usr/local/bin/bicep
 

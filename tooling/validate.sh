@@ -83,13 +83,13 @@ run_k8s() {
   local schemas="-schema-location default -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
   local d chart overlay
   for chart in $(find az-apps/charts -mindepth 1 -maxdepth 1 -type d 2>/dev/null); do
-    helm lint --strict "$chart" || fail=1
     for v in "$chart"/values-*.yaml; do
       [ -e "$v" ] || continue
+      helm lint --strict "$chart" -f "$v" || fail=1
       helm template smoke "$chart" -f "$v" | kubeconform -strict -summary $schemas || fail=1
     done
   done
-  for d in az-apps/platform az-aks/gitops; do
+  for d in az-apps/platform az-apps/deploy az-aks/gitops; do
     [ -d "$d" ] || continue
     for overlay in $(find "$d" -name kustomization.yaml -exec dirname {} \;); do
       kustomize build "$overlay" | kubeconform -strict -summary -ignore-missing-schemas $schemas || fail=1

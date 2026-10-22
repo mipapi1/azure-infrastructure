@@ -41,4 +41,4 @@ docs: ## Regenerate parameter tables in module READMEs
 	$(TOOLS) python3 tooling/gen-docs.py
 
 smoke: ## Deploy the sample app to a local kind cluster and smoke test it
-	az-apps/tests/smoke.sh
+	docker run --rm --platform $(PLATFORM) --user 0 -v /var/run/docker.sock:/var/run/docker.sock -v "$(CURDIR)":/src -w /src $(IMAGE) az-apps/tests/smoke.sh
