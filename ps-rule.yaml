@@ -1,0 +1,37 @@
+# PSRule for Azure. Expands each .bicepparam file into the resources it would
+# deploy and checks them against the Well-Architected rule set.
+requires:
+  PSRule.Rules.Azure: '>=1.47.0'
+
+include:
+  module:
+    - PSRule.Rules.Azure
+
+input:
+  pathIgnore:
+    - '.work/'
+    - 'az-image-builder/tests/'
+    - '**/*.bicep'
+
+configuration:
+  AZURE_BICEP_FILE_EXPANSION: false
+  AZURE_BICEP_PARAMS_FILE_EXPANSION: true
+  AZURE_BICEP_CHECK_TOOL: true
+  # Compilation runs under emulation on Apple silicon; allow for it.
+  AZURE_BICEP_FILE_EXPANSION_TIMEOUT: 180
+  AZURE_BICEP_MINIMUM_VERSION: '0.47.16'
+  AZURE_PARAMETER_FILE_EXPANSION: false
+  # Placeholder subscription used during expansion. No Azure call is made.
+  AZURE_SUBSCRIPTION:
+    subscriptionId: '00000000-0000-0000-0000-000000000000'
+    displayName: 'validation'
+  AZURE_TENANT:
+    tenantId: '00000000-0000-0000-0000-000000000000'
+
+rule:
+  # Exclusions are listed with the reason in docs/DECISIONS.md.
+  exclude: []
+
+output:
+  culture:
+    - en-US

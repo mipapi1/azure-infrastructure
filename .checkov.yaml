@@ -1,0 +1,19 @@
+# Checkov IaC and secret scanning. Skipped checks are explained in docs/DECISIONS.md.
+# Bicep is scanned as compiled ARM (make scan writes out/arm first).
+framework:
+  - arm
+  - kubernetes
+  - helm
+  - kustomize
+  - github_actions
+  - dockerfile
+  - secrets
+skip-path:
+  - .work
+  - .git
+compact: true
+quiet: true
+download-external-modules: false
+skip-check:
+  # Tooling image is a CLI, not a long-running service.
+  - CKV_DOCKER_2
