@@ -49,7 +49,8 @@ param enableTelemetry bool = true
 var hasHub = hub != null
 var routeTableName = '${name}-rt'
 
-// Deny inbound from the internet on every subnet. Workload rules are added on top.
+// Deny inbound from the internet and outbound SSH/RDP to the VNet on every subnet.
+// Workload rules are added on top with lower priority numbers.
 var baselineRules = [
   {
     name: 'deny-internet-inbound'
@@ -63,6 +64,20 @@ var baselineRules = [
       destinationAddressPrefix: '*'
       destinationPortRange: '*'
       description: 'Block direct inbound traffic from the internet.'
+    }
+  }
+  {
+    name: 'deny-lateral-outbound'
+    properties: {
+      access: 'Deny'
+      direction: 'Outbound'
+      priority: 4096
+      protocol: 'Tcp'
+      sourceAddressPrefix: '*'
+      sourcePortRange: '*'
+      destinationAddressPrefix: 'VirtualNetwork'
+      destinationPortRanges: ['22', '3389']
+      description: 'Limit lateral movement over SSH and RDP. Management goes through Bastion.'
     }
   }
 ]
