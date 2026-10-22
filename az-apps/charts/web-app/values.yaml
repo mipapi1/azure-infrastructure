@@ -1,0 +1,67 @@
+# Defaults shared by every environment. values-<env>.yaml overrides them.
+
+image:
+  # Registry and repository, without tag.
+  repository: registry.example.invalid/web-app
+  # Required. Images are deployed by digest only (sha256:...). CI updates it per environment.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+containerPort: 8080
+
+serviceAccount:
+  create: true
+  # Client ID of a user-assigned identity federated to this service account.
+  # Leave empty when the workload doesn't call Azure.
+  workloadIdentityClientId: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+probes:
+  path: /healthz
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: true
+  # Application routing add-on (managed NGINX).
+  className: webapprouting.kubernetes.azure.com
+  host: web.example.invalid
+  clusterIssuer: platform-internal
+  tlsSecretName: web-app-tls
+
+networkPolicy:
+  enabled: true
+  # Namespace of the ingress controller allowed to reach the pods.
+  ingressNamespace: app-routing-system
+  # Extra egress rules (NetworkPolicy egress items). DNS is always allowed.
+  extraEgress: []
+
+externalSecret:
+  enabled: false
+  store: azure-key-vault
+  refreshInterval: 1h
+  # Key Vault secret name -> environment variable.
+  data: []
+  #  - remoteKey: web-app-api-key
+  #    env: API_KEY
+
+env: {}
+
+nodeSelector: {}
+tolerations: []

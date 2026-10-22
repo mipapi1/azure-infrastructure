@@ -1,0 +1,19 @@
+image:
+  # Updated by CI on promotion to prod, after the same digest ran in staging.
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 10
+
+ingress:
+  host: web.example.invalid

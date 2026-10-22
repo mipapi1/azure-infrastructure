@@ -1,0 +1,15 @@
+image:
+  # Updated by CI on promotion to staging.
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+replicaCount: 1
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3
+
+podDisruptionBudget:
+  enabled: false
+
+ingress:
+  host: web.staging.example.invalid
