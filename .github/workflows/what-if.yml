@@ -1,0 +1,75 @@
+# What-if preview for each deployment, using OIDC federation (no stored secrets).
+#
+# Setup, once per environment:
+#   1. Create an Entra app registration (or user-assigned identity) per environment.
+#   2. Add a federated credential for this repository:
+#        issuer:  https://token.actions.githubusercontent.com
+#        subject: repo:<owner>/<repo>:environment:<staging|prod>
+#   3. Grant it Reader plus "what-if" permissions (Reader is enough for what-if
+#      on most resources; management group deployments need Reader at the root
+#      management group).
+#   4. In GitHub, create environments `staging` and `prod` with these variables:
+#        AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#        AZURE_LOCATION, AZURE_MANAGEMENT_GROUP_ID (governance only)
+#   5. Set the repository variable WHAT_IF_ENABLED=true. Environment variables
+#      aren't visible to job-level conditions, so this flag gates the job.
+name: what-if
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment
+        type: choice
+        options: [staging, prod]
+        default: staging
+  pull_request:
+    paths:
+      - 'az-*/**'
+      - 'modules/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  what-if:
+    name: what-if ${{ matrix.deployment.name }} (${{ inputs.environment || 'staging' }})
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || 'staging' }}
+    if: ${{ vars.WHAT_IF_ENABLED == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        deployment:
+          - { name: governance, scope: mg, path: az-landing-zone/governance }
+          - { name: landing-zone, scope: sub, path: az-landing-zone }
+          - { name: avd, scope: sub, path: az-avd }
+          - { name: aks, scope: sub, path: az-aks }
+    env:
+      ENVIRONMENT: ${{ inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: what-if
+        shell: bash
+        run: |
+          set -euo pipefail
+          tpl="${{ matrix.deployment.path }}/main.bicep"
+          prm="${{ matrix.deployment.path }}/params/${ENVIRONMENT}.bicepparam"
+          if [ "${{ matrix.deployment.scope }}" = "mg" ]; then
+            az deployment mg what-if \
+              --management-group-id "${{ vars.AZURE_MANAGEMENT_GROUP_ID }}" \
+              --location "${{ vars.AZURE_LOCATION }}" \
+              --name "whatif-${{ matrix.deployment.name }}-${{ github.run_id }}" \
+              --template-file "$tpl" --parameters "$prm"
+          else
+            az deployment sub what-if \
+              --location "${{ vars.AZURE_LOCATION }}" \
+              --name "whatif-${{ matrix.deployment.name }}-${{ github.run_id }}" \
+              --template-file "$tpl" --parameters "$prm"
+          fi
