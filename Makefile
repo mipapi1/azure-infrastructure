@@ -32,7 +32,6 @@ psrule: ## PSRule for Azure (Well-Architected rules) on parameter files
 	$(TOOLS) tooling/validate.sh psrule
 
 scan: ## Checkov IaC and secret scan (config in .checkov.yaml)
-	$(TOOLS) tooling/validate.sh arm
 	$(DOCKER_RUN) $(CHECKOV_IMAGE) --config-file .checkov.yaml --directory /src
 
 k8s: ## Render and validate Kubernetes manifests and Helm charts

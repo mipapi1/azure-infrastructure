@@ -1,7 +1,7 @@
 # Checkov IaC and secret scanning. Skipped checks are explained in docs/DECISIONS.md.
-# Bicep is scanned as compiled ARM (make scan writes out/arm first).
+# Azure IaC is covered by PSRule for Azure (make psrule). Checkov covers the
+# rest: Kubernetes, Helm, workflows, Dockerfiles and secrets.
 framework:
-  - arm
   - kubernetes
   - helm
   - kustomize
@@ -9,6 +9,7 @@ framework:
   - dockerfile
   - secrets
 skip-path:
+  - out
   - .work
   - .git
 compact: true

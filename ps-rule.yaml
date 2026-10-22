@@ -32,6 +32,11 @@ rule:
   # Exclusions are listed with the reason in docs/DECISIONS.md.
   exclude: []
 
+suppression:
+  # D-005: image builder content storage, reproducible from the publish tools.
+  Azure.Storage.UseReplication:
+    - aibprodeusst
+
 output:
   culture:
     - en-US
