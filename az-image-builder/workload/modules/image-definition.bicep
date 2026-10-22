@@ -13,7 +13,7 @@ param location string
 @description('Tags applied to the definition')
 param tags object = {}
 
-@allowed([ 'Windows', 'Linux' ])
+@allowed(['Windows', 'Linux'])
 param osType string
 
 param definitionDescription string = ''
@@ -21,14 +21,14 @@ param publisher string
 param offer string
 param sku string
 
-@allowed([ 'TrustedLaunch', 'TrustedLaunchSupported', 'Standard' ])
+@allowed(['TrustedLaunch', 'TrustedLaunchSupported', 'Standard'])
 param securityType string = 'TrustedLaunch'
 
-resource gallery 'Microsoft.Compute/galleries@2024-03-03' existing = {
+resource gallery 'Microsoft.Compute/galleries@2025-03-03' existing = {
   name: galleryName
 }
 
-resource definition 'Microsoft.Compute/galleries/images@2024-03-03' = {
+resource definition 'Microsoft.Compute/galleries/images@2025-03-03' = {
   parent: gallery
   name: name
   location: location
@@ -57,12 +57,14 @@ resource definition 'Microsoft.Compute/galleries/images@2024-03-03' = {
           value: 'SCSI, NVMe'
         }
       ],
-      securityType == 'Standard' ? [] : [
-        {
-          name: 'SecurityType'
-          value: securityType
-        }
-      ]
+      securityType == 'Standard'
+        ? []
+        : [
+            {
+              name: 'SecurityType'
+              value: securityType
+            }
+          ]
     )
   }
 }

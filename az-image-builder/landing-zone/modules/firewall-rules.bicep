@@ -22,11 +22,11 @@ param containerInstanceSubnetPrefix string
 @description('Contents of config/firewall-rules.json')
 param rules object
 
-resource policy 'Microsoft.Network/firewallPolicies@2024-05-01' existing = {
+resource policy 'Microsoft.Network/firewallPolicies@2025-05-01' existing = {
   name: firewallPolicyName
 }
 
-resource ruleCollectionGroup 'Microsoft.Network/firewallPolicies/ruleCollectionGroups@2024-05-01' = {
+resource ruleCollectionGroup 'Microsoft.Network/firewallPolicies/ruleCollectionGroups@2025-05-01' = {
   parent: policy
   name: name
   properties: {
@@ -41,8 +41,8 @@ resource ruleCollectionGroup 'Microsoft.Network/firewallPolicies/ruleCollectionG
           {
             ruleType: 'ApplicationRule'
             name: 'container-instance-https'
-            protocols: [ { protocolType: 'Https', port: 443 } ]
-            sourceAddresses: [ containerInstanceSubnetPrefix ]
+            protocols: [{ protocolType: 'Https', port: 443 }]
+            sourceAddresses: [containerInstanceSubnetPrefix]
             targetFqdns: rules.containerInstance.targetFqdns
           }
         ]
@@ -56,15 +56,15 @@ resource ruleCollectionGroup 'Microsoft.Network/firewallPolicies/ruleCollectionG
           {
             ruleType: 'ApplicationRule'
             name: 'build-vm-fqdn-tags'
-            protocols: [ { protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 } ]
-            sourceAddresses: [ buildSubnetPrefix ]
+            protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
+            sourceAddresses: [buildSubnetPrefix]
             fqdnTags: rules.buildVm.fqdnTags
           }
           {
             ruleType: 'ApplicationRule'
             name: 'build-vm-fqdns'
-            protocols: [ { protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 } ]
-            sourceAddresses: [ buildSubnetPrefix ]
+            protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
+            sourceAddresses: [buildSubnetPrefix]
             targetFqdns: rules.buildVm.targetFqdns
           }
         ]
@@ -78,10 +78,10 @@ resource ruleCollectionGroup 'Microsoft.Network/firewallPolicies/ruleCollectionG
           {
             ruleType: 'NetworkRule'
             name: 'windows-activation'
-            ipProtocols: [ 'TCP' ]
-            sourceAddresses: [ buildSubnetPrefix ]
+            ipProtocols: ['TCP']
+            sourceAddresses: [buildSubnetPrefix]
             destinationAddresses: rules.buildVm.kmsAddresses
-            destinationPorts: [ '1688' ]
+            destinationPorts: ['1688']
           }
         ]
       }

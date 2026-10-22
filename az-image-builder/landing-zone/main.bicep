@@ -142,7 +142,7 @@ resource galleryDistributorRole 'Microsoft.Authorization/roleDefinitions@2022-04
         notActions: []
       }
     ]
-    assignableScopes: union([ subscription().id ], [ '/subscriptions/${gallerySubscriptionId}' ])
+    assignableScopes: union([subscription().id], ['/subscriptions/${gallerySubscriptionId}'])
   }
 }
 
@@ -161,7 +161,7 @@ resource networkJoinRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = 
         notActions: []
       }
     ]
-    assignableScopes: [ subscription().id ]
+    assignableScopes: [subscription().id]
   }
 }
 
@@ -190,7 +190,7 @@ module ids 'modules/identities.bicep' = {
     enableLock: enableLock
     lockKind: lockKind
   }
-  dependsOn: [ rg ]
+  dependsOn: [rg]
 }
 
 module vnet 'modules/network.bicep' = {
@@ -208,7 +208,9 @@ module vnet 'modules/network.bicep' = {
     dnsServers: network.?dnsServers ?? []
     egressMode: network.egress.mode
     firewallPrivateIpAddress: network.egress.mode == 'firewall' ? network.egress.firewallPrivateIpAddress : ''
-    disableBgpRoutePropagation: network.egress.mode == 'firewall' ? (network.egress.?disableBgpRoutePropagation ?? true) : true
+    disableBgpRoutePropagation: network.egress.mode == 'firewall'
+      ? (network.egress.?disableBgpRoutePropagation ?? true)
+      : true
     natGatewayAvailabilityZone: network.egress.mode == 'natGateway' ? (network.egress.?availabilityZone ?? -1) : -1
     hubPeering: network.?hubPeering ?? {}
     enableLock: enableLock
@@ -221,7 +223,7 @@ module vnet 'modules/network.bicep' = {
       }
     ]
   }
-  dependsOn: [ rg ]
+  dependsOn: [rg]
 }
 
 module firewallRules 'modules/firewall-rules.bicep' = if (!empty(firewallPolicyId)) {
@@ -229,7 +231,9 @@ module firewallRules 'modules/firewall-rules.bicep' = if (!empty(firewallPolicyI
   scope: resourceGroup(split(firewallPolicyId, '/')[2], split(firewallPolicyId, '/')[4])
   params: {
     firewallPolicyName: last(split(firewallPolicyId, '/'))
-    name: network.egress.mode == 'firewall' ? (network.egress.?ruleCollectionGroupName ?? '${network.name}-image-builder') : ''
+    name: network.egress.mode == 'firewall'
+      ? (network.egress.?ruleCollectionGroupName ?? '${network.name}-image-builder')
+      : ''
     priority: network.egress.mode == 'firewall' ? (network.egress.?ruleCollectionGroupPriority ?? 500) : 500
     buildSubnetPrefix: network.buildSubnet.addressPrefix
     containerInstanceSubnetPrefix: network.containerInstanceSubnet.addressPrefix
@@ -266,12 +270,15 @@ module gal 'modules/gallery.bicep' = {
     location: location
     tags: tags
     galleryDescription: gallery.?description ?? 'Images built by Azure Image Builder'
+    // The principal ID is only known at deploy time. It is part of the existing role
+    // assignment name, so switching to a compile-time value would recreate it.
+    #disable-next-line what-if-short-circuiting
     templateIdentityPrincipalId: ids.outputs.templateIdentityPrincipalId
     roleDefinitionId: galleryDistributorRole.id
     enableLock: enableLock
     lockKind: lockKind
   }
-  dependsOn: [ rg ]
+  dependsOn: [rg]
 }
 
 /////////////

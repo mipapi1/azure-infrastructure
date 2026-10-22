@@ -42,7 +42,7 @@ param excludeFromLatest bool = false
 
 param artifactTags object = {}
 
-@allowed([ 'cleanup', 'abort' ])
+@allowed(['cleanup', 'abort'])
 param onError string = 'cleanup'
 
 @description('0 = service default (240 minutes)')

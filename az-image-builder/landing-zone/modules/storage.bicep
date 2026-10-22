@@ -12,11 +12,11 @@ param location string
 @description('Tags applied to the storage account')
 param tags object = {}
 
-@allowed([ 'Standard_LRS', 'Standard_ZRS', 'Standard_GRS', 'Standard_GZRS' ])
+@allowed(['Standard_LRS', 'Standard_ZRS', 'Standard_GRS', 'Standard_GZRS'])
 param skuName string = 'Standard_LRS'
 
 @description('Enabled = reachable from allowedIpRanges only (firewall default Deny). Disabled = private endpoint only')
-@allowed([ 'Enabled', 'Disabled' ])
+@allowed(['Enabled', 'Disabled'])
 param publicNetworkAccess string = 'Enabled'
 
 @description('Public IPs/CIDRs allowed through the storage firewall. Leave empty: the publish tools add your IP only while they run')
@@ -41,7 +41,7 @@ param publishers array = []
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 var blobZoneName = 'privatelink.blob.${environment().suffixes.storage}'
@@ -125,7 +125,9 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.1' = {
         privateDnsZoneGroup: {
           privateDnsZoneGroupConfigs: [
             {
-              privateDnsZoneResourceId: empty(privateDnsZoneResourceId) ? blobZone!.outputs.resourceId : privateDnsZoneResourceId
+              privateDnsZoneResourceId: empty(privateDnsZoneResourceId)
+                ? blobZone!.outputs.resourceId
+                : privateDnsZoneResourceId
             }
           ]
         }

@@ -41,18 +41,23 @@ var gallerySubscriptionId = landingZone.gallery.?subscriptionId ?? lzSubscriptio
 var blobEndpoint = 'https://${landingZone.storageAccountName}.blob.${environment().suffixes.storage}/'
 var scriptsBaseUri = '${blobEndpoint}scripts/${manifest.version}'
 
-var vnetId = resourceId(lzSubscriptionId, landingZone.resourceGroupName, 'Microsoft.Network/virtualNetworks', landingZone.virtualNetworkName)
+var vnetId = resourceId(
+  lzSubscriptionId,
+  landingZone.resourceGroupName,
+  'Microsoft.Network/virtualNetworks',
+  landingZone.virtualNetworkName
+)
 
 /////////////////////////
 // reference resources //
 /////////////////////////
 
-resource templateIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+resource templateIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: landingZone.templateIdentityName
   scope: resourceGroup(lzSubscriptionId, landingZone.resourceGroupName)
 }
 
-resource buildVmIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+resource buildVmIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
   name: landingZone.buildVmIdentityName
   scope: resourceGroup(lzSubscriptionId, landingZone.resourceGroupName)
 }
@@ -61,7 +66,7 @@ resource buildVmIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // helpers //
 /////////////
 
-func isLinux(image imageConfig) bool => contains([ 'ubuntu', 'rhel' ], image.os)
+func isLinux(image imageConfig) bool => contains(['ubuntu', 'rhel'], image.os)
 
 func family(image imageConfig) string => isLinux(image) ? 'linux' : 'windows'
 
@@ -72,7 +77,7 @@ func updatesOn(image imageConfig) bool => image.?updates.?enabled ?? true
 func profileOf(image imageConfig) string => image.?hardening.?profile ?? 'Restricted'
 
 func browsersOf(image imageConfig) string[] =>
-  isLinux(image) ? [] : (image.?hardening.?browsers ?? (image.os == 'ws2022' ? [] : [ 'edge' ]))
+  isLinux(image) ? [] : (image.?hardening.?browsers ?? (image.os == 'ws2022' ? [] : ['edge']))
 
 func stigPackagesOf(image imageConfig) string[] => image.?hardening.?additionalStigPackages ?? []
 
@@ -84,7 +89,11 @@ func excludeRulesOf(image imageConfig) string[] => image.?hardening.?excludeRule
 
 @description('Scripts the image downloads: its OS family folder plus artifacts.json.')
 func filesFor(files object, osFamily string) object =>
-  toObject(filter(items(files), f => startsWith(f.key, '${osFamily}/') || f.key == 'artifacts.json'), f => f.key, f => f.value)
+  toObject(
+    filter(items(files), f => startsWith(f.key, '${osFamily}/') || f.key == 'artifacts.json'),
+    f => f.key,
+    f => f.value
+  )
 
 @description('PowerShell single-quoted string literal.')
 func psString(value string) string => '\'${replace(value, '\'', '\'\'')}\''
@@ -105,8 +114,8 @@ func sessionLimitMs(limit string) int =>
 
 func artifactGroupsFor(image imageConfig) string[] =>
   union(
-    hardeningOn(image) ? [ '${family(image)}-stig' ] : [],
-    contains(browsersOf(image), 'chrome') ? [ 'chrome' ] : [],
+    hardeningOn(image) ? ['${family(image)}-stig'] : [],
+    contains(browsersOf(image), 'chrome') ? ['chrome'] : [],
     image.?artifactGroups ?? []
   )
 
@@ -123,7 +132,11 @@ func windowsBootstrap(files object, baseUri string, clientId string) object => {
   inline: split(
     replace(
       replace(
-        replace(replace(loadTextContent('bootstrap.ps1'), '\r', ''), '__FILES_JSON__', replace(string(files), '\'', '\'\'')),
+        replace(
+          replace(loadTextContent('bootstrap.ps1'), '\r', ''),
+          '__FILES_JSON__',
+          replace(string(files), '\'', '\'\'')
+        ),
         '__SCRIPTS_BASE_URI__',
         baseUri
       ),
@@ -143,15 +156,19 @@ func windowsUpdateSteps(image imageConfig) object[] =>
         ])
         windowsUpdate('windowsUpdate', image.?updates.?updateLimit ?? 20)
         restart('windowsUpdateRestart')
-        inlineStep('windowsUpdateStabilization', [ 'Start-Sleep -Seconds 120' ])
+        inlineStep('windowsUpdateStabilization', ['Start-Sleep -Seconds 120'])
       ]
     : []
 
 func windowsSoftwareSteps(image imageConfig) object[] =>
-  flatten(map(image.?software ?? [], s => concat(
-    [ runScript(s.name, s.script, s.?arguments ?? '') ],
-    (s.?restartAfter ?? false) ? [ restart('${s.name}Restart') ] : []
-  )))
+  flatten(map(
+    image.?software ?? [],
+    s =>
+      concat(
+        [runScript(s.name, s.script, s.?arguments ?? '')],
+        (s.?restartAfter ?? false) ? [restart('${s.name}Restart')] : []
+      )
+  ))
 
 // Hardening runs after all software (FIPS and AppLocker can break installers). STIG settings that would cut
 // Packer's WinRM connection are applied by C:\DeprovisioningScript.ps1 just before sysprep.
@@ -175,21 +192,37 @@ func windowsHardeningSteps(image imageConfig) object[] =>
                   '-SecurityProfile ${profileOf(image)}'
                   '-DisconnectedSessionLimitMs ${sessionLimitMs(image.?hardening.?disconnectedSessionLimit ?? '')}'
                 ],
-                empty(image.?hardening.?ntpServer ?? '') ? [] : [ '-NtpServer ${psString(image.?hardening.?ntpServer ?? '')}' ],
-                image.?hardening.?legalNotice == null ? [] : [
-                  '-LegalNoticeCaption ${psString(image.?hardening.?legalNotice.?caption ?? '')}'
-                  '-LegalNoticeTextBase64 ${base64(image.?hardening.?legalNotice.?text ?? '')}'
-                ]
+                empty(image.?hardening.?ntpServer ?? '')
+                  ? []
+                  : ['-NtpServer ${psString(image.?hardening.?ntpServer ?? '')}'],
+                image.?hardening.?legalNotice == null
+                  ? []
+                  : [
+                      '-LegalNoticeCaption ${psString(image.?hardening.?legalNotice.?caption ?? '')}'
+                      '-LegalNoticeTextBase64 ${base64(image.?hardening.?legalNotice.?text ?? '')}'
+                    ]
               ),
               ' '
             )
           )
         ],
         contains(browsersOf(image), 'edge')
-          ? [ runScript('configureEdge', 'windows/stig/configureEdge.ps1', '-SecurityProfile ${profileOf(image)} -AllowedPopups ${psArray(popupsOf(image))}') ]
+          ? [
+              runScript(
+                'configureEdge',
+                'windows/stig/configureEdge.ps1',
+                '-SecurityProfile ${profileOf(image)} -AllowedPopups ${psArray(popupsOf(image))}'
+              )
+            ]
           : [],
         contains(browsersOf(image), 'chrome')
-          ? [ runScript('configureChrome', 'windows/stig/configureChrome.ps1', '-SecurityProfile ${profileOf(image)} -AllowedPopups ${psArray(popupsOf(image))}') ]
+          ? [
+              runScript(
+                'configureChrome',
+                'windows/stig/configureChrome.ps1',
+                '-SecurityProfile ${profileOf(image)} -AllowedPopups ${psArray(popupsOf(image))}'
+              )
+            ]
           : [],
         (image.?hardening.?appLocker ?? true)
           ? [
@@ -204,17 +237,19 @@ func windowsHardeningSteps(image imageConfig) object[] =>
 
 func windowsSteps(image imageConfig, files object, baseUri string, endpoint string, clientId string) object[] =>
   concat(
-    [ windowsBootstrap(files, baseUri, clientId) ],
+    [windowsBootstrap(files, baseUri, clientId)],
     windowsUpdateSteps(image),
-    [ runScript('optimizeWindows', 'windows/common/optimizeWindows.ps1', '') ],
-    empty(artifactGroupsFor(image)) ? [] : [ getArtifacts('downloadArtifacts', artifactGroupsFor(image), endpoint, clientId) ],
-    contains(browsersOf(image), 'chrome') ? [ runScript('installChrome', 'windows/common/installChrome.ps1', '') ] : [],
+    [runScript('optimizeWindows', 'windows/common/optimizeWindows.ps1', '')],
+    empty(artifactGroupsFor(image))
+      ? []
+      : [getArtifacts('downloadArtifacts', artifactGroupsFor(image), endpoint, clientId)],
+    contains(browsersOf(image), 'chrome') ? [runScript('installChrome', 'windows/common/installChrome.ps1', '')] : [],
     windowsSoftwareSteps(image),
     image.?customizers ?? [],
     windowsHardeningSteps(image),
     [
       restart('finalRestart')
-      inlineStep('finalStabilization', [ 'Start-Sleep -Seconds 120' ])
+      inlineStep('finalStabilization', ['Start-Sleep -Seconds 120'])
       inlineStep('startSysprepDependencyServices', [
         '$services = "RdAgent","WindowsAzureGuestAgent"; foreach ($svc in $services) { if (Get-Service -Name $svc -ErrorAction SilentlyContinue) { Set-Service -Name $svc -StartupType Automatic; Start-Service -Name $svc -ErrorAction SilentlyContinue } }'
       ])
@@ -230,35 +265,42 @@ func windowsSteps(image imageConfig, files object, baseUri string, endpoint stri
 ///////////////////////
 
 @description('Inline bootstrap (bootstrap.sh): downloads and hash-checks the published scripts.')
-func linuxBootstrap(files object, baseUri string, clientId string) object => inlineShell(
-  'bootstrapScripts',
-  concat(
-    [ 'cat > /tmp/aib-bootstrap.sh <<\'AIB_BOOTSTRAP_EOF\'' ],
-    split(
-      replace(
+func linuxBootstrap(files object, baseUri string, clientId string) object =>
+  inlineShell(
+    'bootstrapScripts',
+    concat(
+      ['cat > /tmp/aib-bootstrap.sh <<\'AIB_BOOTSTRAP_EOF\''],
+      split(
         replace(
-          replace(replace(loadTextContent('bootstrap.sh'), '\r', ''), '__FILES__', join(map(items(files), f => '${f.value} ${f.key}'), '\n')),
-          '__SCRIPTS_BASE_URI__',
-          baseUri
+          replace(
+            replace(
+              replace(loadTextContent('bootstrap.sh'), '\r', ''),
+              '__FILES__',
+              join(map(items(files), f => '${f.value} ${f.key}'), '\n')
+            ),
+            '__SCRIPTS_BASE_URI__',
+            baseUri
+          ),
+          '__CLIENT_ID__',
+          clientId
         ),
-        '__CLIENT_ID__',
-        clientId
+        '\n'
       ),
-      '\n'
-    ),
-    [
-      'AIB_BOOTSTRAP_EOF'
-      'sudo bash /tmp/aib-bootstrap.sh'
-      'rm -f /tmp/aib-bootstrap.sh'
-    ]
+      [
+        'AIB_BOOTSTRAP_EOF'
+        'sudo bash /tmp/aib-bootstrap.sh'
+        'rm -f /tmp/aib-bootstrap.sh'
+      ]
+    )
   )
-)
 
 func linuxSteps(image imageConfig, files object, baseUri string, endpoint string, clientId string) object[] =>
   concat(
-    [ linuxBootstrap(files, baseUri, clientId) ],
-    updatesOn(image) ? [ runShell('updatePackages', 'linux/common/update-packages.sh', '') ] : [],
-    empty(artifactGroupsFor(image)) ? [] : [ getArtifactsLinux('downloadArtifacts', artifactGroupsFor(image), endpoint, clientId) ],
+    [linuxBootstrap(files, baseUri, clientId)],
+    updatesOn(image) ? [runShell('updatePackages', 'linux/common/update-packages.sh', '')] : [],
+    empty(artifactGroupsFor(image))
+      ? []
+      : [getArtifactsLinux('downloadArtifacts', artifactGroupsFor(image), endpoint, clientId)],
     map(image.?software ?? [], s => runShell(s.name, s.script, s.?arguments ?? '')),
     image.?customizers ?? [],
     hardeningOn(image)
@@ -268,9 +310,9 @@ func linuxSteps(image imageConfig, files object, baseUri string, endpoint string
             'linux/stig/harden.sh',
             join(
               concat(
-                [ '--profile ${shString(image.?hardening.?stigProfile ?? 'stig')}' ],
-                empty(excludeRulesOf(image)) ? [] : [ '--exclude ${shString(join(excludeRulesOf(image), ','))}' ],
-                (image.?hardening.?scan ?? true) ? [] : [ '--no-scan' ]
+                ['--profile ${shString(image.?hardening.?stigProfile ?? 'stig')}'],
+                empty(excludeRulesOf(image)) ? [] : ['--exclude ${shString(join(excludeRulesOf(image), ','))}'],
+                (image.?hardening.?scan ?? true) ? [] : ['--no-scan']
               ),
               ' '
             )
@@ -278,7 +320,7 @@ func linuxSteps(image imageConfig, files object, baseUri string, endpoint string
         ]
       : [],
     // Image Builder deprovisions (waagent -deprovision+user) after the last customizer.
-    [ inlineShell('cleanup', [ 'sudo rm -rf /opt/imagebuilder /var/tmp/imagebuilder' ]) ]
+    [inlineShell('cleanup', ['sudo rm -rf /opt/imagebuilder /var/tmp/imagebuilder'])]
   )
 
 ////////////////////////
@@ -322,10 +364,22 @@ module imageTemplates 'modules/image-template.bicep' = [
       stagingResourceGroupResourceId: stagingResourceGroupResourceId
       imageSource: image.source
       templateIdentityResourceId: templateIdentity.id
-      vmUserAssignedIdentities: [ buildVmIdentity.id ]
+      vmUserAssignedIdentities: [buildVmIdentity.id]
       customizationSteps: isLinux(image)
-        ? linuxSteps(image, filesFor(manifest.files, 'linux'), scriptsBaseUri, blobEndpoint, buildVmIdentity.properties.clientId)
-        : windowsSteps(image, filesFor(manifest.files, 'windows'), scriptsBaseUri, blobEndpoint, buildVmIdentity.properties.clientId)
+        ? linuxSteps(
+            image,
+            filesFor(manifest.files, 'linux'),
+            scriptsBaseUri,
+            blobEndpoint,
+            buildVmIdentity.properties.clientId
+          )
+        : windowsSteps(
+            image,
+            filesFor(manifest.files, 'windows'),
+            scriptsBaseUri,
+            blobEndpoint,
+            buildVmIdentity.properties.clientId
+          )
       galleryImageDefinitionResourceId: resourceId(
         gallerySubscriptionId,
         landingZone.gallery.resourceGroupName,
@@ -333,17 +387,21 @@ module imageTemplates 'modules/image-template.bicep' = [
         landingZone.gallery.name,
         image.definition.name
       )
-      targetRegions: image.?distribution.?regions ?? [ { name: landingZone.location } ]
+      targetRegions: image.?distribution.?regions ?? [{ name: landingZone.location }]
       excludeFromLatest: image.?distribution.?excludeFromLatest ?? false
       artifactTags: {
-        source: image.source.type == 'PlatformImage' ? '${image.source.?offer}/${image.source.?sku}' : last(split(image.source.?imageVersionId ?? '', '/'))
+        source: image.source.type == 'PlatformImage'
+          ? '${image.source.?offer}/${image.source.?sku}'
+          : last(split(image.source.?imageVersionId ?? '', '/'))
         os: image.os
-        hardening: !hardeningOn(image) ? 'none' : (isLinux(image) ? (image.?hardening.?stigProfile ?? 'stig') : profileOf(image))
+        hardening: !hardeningOn(image)
+          ? 'none'
+          : (isLinux(image) ? (image.?hardening.?stigProfile ?? 'stig') : profileOf(image))
         scriptsVersion: manifest.version
         scriptsCommit: manifest.?commit ?? 'unknown'
       }
     }
-    dependsOn: [ imageDefinitions ]
+    dependsOn: [imageDefinitions]
   }
 ]
 

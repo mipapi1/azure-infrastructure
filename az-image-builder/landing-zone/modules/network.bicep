@@ -29,7 +29,7 @@ param privateEndpointAllowedSourcePrefixes string[] = []
 param dnsServers string[] = []
 
 @description('Egress: firewall (route 0.0.0.0/0 to firewallPrivateIpAddress) or natGateway')
-@allowed([ 'firewall', 'natGateway' ])
+@allowed(['firewall', 'natGateway'])
 param egressMode string
 
 @description('Firewall private IP (egressMode firewall)')
@@ -51,7 +51,7 @@ param roleAssignments array = []
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 var useFirewall = egressMode == 'firewall'
@@ -67,6 +67,21 @@ var denyVnetInbound = {
     sourcePortRange: '*'
     destinationAddressPrefix: '*'
     destinationPortRange: '*'
+  }
+}
+
+// Stops a compromised build VM or container from reaching other hosts over SSH/RDP.
+var denyLateralOutbound = {
+  name: 'DenyLateralOutbound'
+  properties: {
+    access: 'Deny'
+    direction: 'Outbound'
+    priority: 4000
+    protocol: 'Tcp'
+    sourceAddressPrefix: '*'
+    sourcePortRange: '*'
+    destinationAddressPrefix: 'VirtualNetwork'
+    destinationPortRanges: ['22', '3389']
   }
 }
 
@@ -88,10 +103,11 @@ module buildNsg 'br/public:avm/res/network/network-security-group:0.5.4' = {
           sourceAddressPrefix: containerInstanceSubnet.addressPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: buildSubnet.addressPrefix
-          destinationPortRanges: [ '5986', '22' ]
+          destinationPortRanges: ['5986', '22']
         }
       }
       denyVnetInbound
+      denyLateralOutbound
     ]
   }
 }
@@ -102,7 +118,23 @@ module containerInstanceNsg 'br/public:avm/res/network/network-security-group:0.
     name: '${name}-${containerInstanceSubnet.name}-nsg'
     location: location
     tags: tags
-    securityRules: [ denyVnetInbound ]
+    securityRules: [
+      {
+        name: 'AllowContainerInstanceToBuildVmOutbound'
+        properties: {
+          access: 'Allow'
+          direction: 'Outbound'
+          priority: 100
+          protocol: 'Tcp'
+          sourceAddressPrefix: containerInstanceSubnet.addressPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: buildSubnet.addressPrefix
+          destinationPortRanges: ['5986', '22']
+        }
+      }
+      denyVnetInbound
+      denyLateralOutbound
+    ]
   }
 }
 
@@ -120,13 +152,14 @@ module privateEndpointNsg 'br/public:avm/res/network/network-security-group:0.5.
           direction: 'Inbound'
           priority: 100
           protocol: 'Tcp'
-          sourceAddressPrefixes: concat([ buildSubnet.addressPrefix ], privateEndpointAllowedSourcePrefixes)
+          sourceAddressPrefixes: concat([buildSubnet.addressPrefix], privateEndpointAllowedSourcePrefixes)
           sourcePortRange: '*'
           destinationAddressPrefix: privateEndpointSubnet.addressPrefix
           destinationPortRange: '443'
         }
       }
       denyVnetInbound
+      denyLateralOutbound
     ]
   }
 }
@@ -176,7 +209,7 @@ module vnet 'br/public:avm/res/network/virtual-network:0.10.2' = {
     name: name
     location: location
     tags: tags
-    addressPrefixes: [ addressPrefix ]
+    addressPrefixes: [addressPrefix]
     dnsServers: dnsServers
     lock: enableLock ? { kind: lockKind, name: 'lock-${name}' } : null
     roleAssignments: roleAssignments
@@ -202,20 +235,22 @@ module vnet 'br/public:avm/res/network/virtual-network:0.10.2' = {
         defaultOutboundAccess: false
       }
     ]
-    peerings: empty(hubPeering) ? [] : [
-      {
-        name: 'to-${last(split(hubPeering.remoteVirtualNetworkResourceId, '/'))}'
-        remoteVirtualNetworkResourceId: hubPeering.remoteVirtualNetworkResourceId
-        allowVirtualNetworkAccess: true
-        allowForwardedTraffic: true
-        useRemoteGateways: hubPeering.?useRemoteGateways ?? false
-        remotePeeringEnabled: hubPeering.?createRemotePeering ?? false
-        remotePeeringName: 'to-${name}'
-        remotePeeringAllowVirtualNetworkAccess: true
-        remotePeeringAllowForwardedTraffic: true
-        remotePeeringAllowGatewayTransit: hubPeering.?useRemoteGateways ?? false
-      }
-    ]
+    peerings: empty(hubPeering)
+      ? []
+      : [
+          {
+            name: 'to-${last(split(hubPeering.remoteVirtualNetworkResourceId, '/'))}'
+            remoteVirtualNetworkResourceId: hubPeering.remoteVirtualNetworkResourceId
+            allowVirtualNetworkAccess: true
+            allowForwardedTraffic: true
+            useRemoteGateways: hubPeering.?useRemoteGateways ?? false
+            remotePeeringEnabled: hubPeering.?createRemotePeering ?? false
+            remotePeeringName: 'to-${name}'
+            remotePeeringAllowVirtualNetworkAccess: true
+            remotePeeringAllowForwardedTraffic: true
+            remotePeeringAllowGatewayTransit: hubPeering.?useRemoteGateways ?? false
+          }
+        ]
   }
 }
 

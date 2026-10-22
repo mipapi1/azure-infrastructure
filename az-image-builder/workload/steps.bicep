@@ -25,7 +25,7 @@ func inlineStep(name string, lines string[]) object => {
   name: name
   runElevated: true
   runAsSystem: true
-  inline: concat([ '$ErrorActionPreference = "Stop"' ], lines)
+  inline: concat(['$ErrorActionPreference = "Stop"'], lines)
 }
 
 @export()

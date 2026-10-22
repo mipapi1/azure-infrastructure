@@ -26,7 +26,7 @@ param roleDefinitionId string
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 module gallery 'br/public:avm/res/compute/gallery:0.9.5' = if (create) {
@@ -47,7 +47,7 @@ module gallery 'br/public:avm/res/compute/gallery:0.9.5' = if (create) {
   }
 }
 
-resource existingGallery 'Microsoft.Compute/galleries@2024-03-03' existing = if (!create) {
+resource existingGallery 'Microsoft.Compute/galleries@2025-03-03' existing = if (!create) {
   name: name
 }
 

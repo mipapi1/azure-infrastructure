@@ -17,7 +17,7 @@ param tags object = {}
 param enableLock bool = false
 
 @description('Lock kind when enableLock is true')
-@allowed([ 'CanNotDelete', 'ReadOnly' ])
+@allowed(['CanNotDelete', 'ReadOnly'])
 param lockKind string = 'CanNotDelete'
 
 module templateIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {
