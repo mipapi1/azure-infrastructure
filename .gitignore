@@ -2,3 +2,4 @@ out/
 checkov.sarif
 *.swp
 .DS_Store
+*.snapshot.json

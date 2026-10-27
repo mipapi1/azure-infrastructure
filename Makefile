@@ -6,7 +6,7 @@ DOCKER_RUN       = docker run --rm --platform $(PLATFORM) -v "$(CURDIR)":/src -w
 TOOLS            = $(DOCKER_RUN) $(IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help tools validate build lint format format-check psrule scan k8s docs docs-check smoke
+.PHONY: help tools validate build lint format format-check psrule snapshot scan k8s docs docs-check smoke
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -14,7 +14,7 @@ help: ## Show targets
 tools: ## Build the tooling image
 	docker build --platform $(PLATFORM) -t $(IMAGE) tooling
 
-validate: build lint format-check psrule scan k8s docs-check ## Run every check
+validate: build lint format-check psrule snapshot scan k8s docs-check ## Run every check
 
 build: ## Compile every Bicep file and parameter file
 	$(TOOLS) tooling/validate.sh build
@@ -30,6 +30,9 @@ format-check: ## Fail if any Bicep file is not formatted
 
 psrule: ## PSRule for Azure (Well-Architected rules) on parameter files
 	$(TOOLS) tooling/validate.sh psrule
+
+snapshot: ## Evaluate deployments offline (bicep snapshot) and check predicted resources
+	$(TOOLS) python3 tooling/snapshot-check.py
 
 scan: ## Checkov IaC and secret scan (config in .checkov.yaml)
 	$(DOCKER_RUN) $(CHECKOV_IMAGE) --config-file .checkov.yaml --directory /src

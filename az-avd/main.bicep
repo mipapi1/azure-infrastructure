@@ -93,7 +93,28 @@ param enableTelemetry bool = true
 
 var isProd = environment == 'prod'
 var lock = lockFor(environment)
-var baseName = '${workload}-${environment}-${regionShortNames[location]}'
+
+// Parameter combinations that can't work. fail() stops the deployment (and bicep snapshot)
+// before any resource is created; baseName references the checks so they're always evaluated.
+// The cloud check is separate because environment() is only known at deployment time, and
+// keeping it apart lets bicep snapshot evaluate the parameter-only checks offline.
+var configurationErrors = filter(
+  [
+    isCloudOnly && !isEntraJoined
+      ? 'identity.userIdentitySource CloudOnly requires identity.mode EntraJoined (cloud-only users cannot sign in to domain-joined hosts).'
+      : ''
+    isCloudOnly && useAzureFiles && contains(['AADDS', 'AD'], fslogix.?directoryService ?? 'AADKERB')
+      ? 'Cloud-only identities need fslogix.directoryService AADKERB; AADDS and AD only know domain identities.'
+      : ''
+  ],
+  e => !empty(e)
+)
+var configurationCheck = empty(configurationErrors) ? '' : fail(join(configurationErrors, ' '))
+var cloudCheck = cloudOnlyFilesUnsupported
+  ? fail('Cloud-only identities on Azure Files are not supported in ${az.environment().name}. Set fslogix.storageType to BlobCloudCache, or use hybrid identities.')
+  : ''
+
+var baseName = '${workload}-${environment}-${regionShortNames[location]}${configurationCheck}${cloudCheck}'
 
 var rgNames = {
   network: '${baseName}-network-rg'
@@ -107,9 +128,18 @@ var isEntraJoined = identityMode == 'EntraJoined'
 var poolType = hostPool.?type ?? 'Pooled'
 var isPooled = poolType == 'Pooled'
 var maxSessionLimit = isPooled ? (hostPool.?maxSessionLimit ?? 12) : 1
+var isCloudOnly = (identity.?userIdentitySource ?? 'Hybrid') == 'CloudOnly'
 var fslogixEnabled = fslogix.?enabled ?? true
+var storageType = fslogix.?storageType ?? 'AzureFiles'
+var useAzureFiles = fslogixEnabled && storageType == 'AzureFiles'
+var useBlobCloudCache = fslogixEnabled && storageType == 'BlobCloudCache'
 var shareQuotaGiB = fslogix.?shareQuotaGiB ?? (isProd ? 1024 : 100)
-var directoryService = fslogix.?directoryService ?? (isEntraJoined ? 'AADKERB' : 'AADDS')
+var directoryService = isCloudOnly ? 'AADKERB' : (fslogix.?directoryService ?? (isEntraJoined ? 'AADKERB' : 'AADDS'))
+// Cloud-only identities on Azure Files are supported in the Azure public cloud only.
+var cloudOnlyFilesUnsupported = isCloudOnly && useAzureFiles && contains(
+  ['AzureUSGovernment', 'AzureChinaCloud'],
+  az.environment().name
+)
 var scalingEnabled = isPooled && (scaling.?enabled ?? true)
 var exclusionTag = scaling.?exclusionTag ?? 'scaling-exclude'
 var adminGroups = identity.?adminGroupObjectIds ?? []
@@ -118,6 +148,7 @@ var dnsZoneRg = hub.privateDnsZoneResourceGroupResourceId
 var dnsZone = {
   wvd: '${dnsZoneRg}/providers/Microsoft.Network/privateDnsZones/privatelink.wvd.microsoft.com'
   file: '${dnsZoneRg}/providers/Microsoft.Network/privateDnsZones/privatelink.file.${az.environment().suffixes.storage}'
+  blob: '${dnsZoneRg}/providers/Microsoft.Network/privateDnsZones/privatelink.blob.${az.environment().suffixes.storage}'
 }
 
 var diagnosticSettings = [
@@ -532,7 +563,7 @@ var storageAccountResourceId = resourceId(
   storageAccountName
 )
 
-module profileStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (fslogixEnabled) {
+module profileStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (useAzureFiles) {
   name: '${uniqueString(deployment().name, location)}-fslogix-storage'
   scope: resourceGroup(rgNames.storage)
   params: {
@@ -548,9 +579,10 @@ module profileStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (f
     defaultToOAuthAuthentication: true
     publicNetworkAccess: 'Disabled'
     networkAcls: { bypass: 'AzureServices', defaultAction: 'Deny' }
+    // Cloud-only users need no domain properties; they only apply to hybrid or AD DS identities.
     azureFilesIdentityBasedAuthentication: union(
       { directoryServiceOptions: directoryService, defaultSharePermission: 'None' },
-      fslogix.?activeDirectoryProperties != null
+      !isCloudOnly && fslogix.?activeDirectoryProperties != null
         ? { activeDirectoryProperties: fslogix.?activeDirectoryProperties }
         : {}
     )
@@ -614,6 +646,71 @@ module profileStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (f
   dependsOn: [resourceGroups]
 }
 
+// Kerberos-free profile store: FSLogix Cloud Cache on page blobs. Cloud Cache only
+// authenticates with an account key, so this is the one account that keeps shared key
+// access, and it carries the exception tag that the governance policy checks.
+var blobStorageAccountName = compactName(
+  workload,
+  environment,
+  location,
+  'fslb',
+  uniqueString(subscription().id, workload),
+  24
+)
+var blobStorageAccountResourceId = resourceId(
+  subscription().subscriptionId,
+  rgNames.storage,
+  'Microsoft.Storage/storageAccounts',
+  blobStorageAccountName
+)
+
+module profileBlobStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (useBlobCloudCache) {
+  name: '${uniqueString(deployment().name, location)}-fslogix-blob'
+  scope: resourceGroup(rgNames.storage)
+  params: {
+    name: blobStorageAccountName
+    location: location
+    kind: 'StorageV2'
+    skuName: isProd ? 'Standard_ZRS' : 'Standard_LRS'
+    accessTier: 'Hot'
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    allowBlobPublicAccess: false
+    allowSharedKeyAccess: true
+    allowCrossTenantReplication: false
+    defaultToOAuthAuthentication: true
+    publicNetworkAccess: 'Disabled'
+    networkAcls: { bypass: 'AzureServices', defaultAction: 'Deny' }
+    blobServices: {
+      deleteRetentionPolicyEnabled: true
+      deleteRetentionPolicyDays: 7
+      containerDeleteRetentionPolicyEnabled: true
+      containerDeleteRetentionPolicyDays: 7
+      diagnosticSettings: diagnosticSettings
+    }
+    privateEndpoints: [
+      {
+        name: '${blobStorageAccountName}-pe-blob'
+        service: 'blob'
+        subnetResourceId: spoke.outputs.subnetResourceIds['snet-private-endpoints']
+        privateDnsZoneGroup: { privateDnsZoneGroupConfigs: [{ privateDnsZoneResourceId: dnsZone.blob }] }
+        tags: tags
+      }
+    ]
+    diagnosticSettings: [
+      {
+        name: 'to-central-law'
+        workspaceResourceId: monitoring.logAnalyticsWorkspaceResourceId
+        metricCategories: [{ category: 'Transaction' }]
+      }
+    ]
+    lock: lock
+    tags: union(tags, { 'shared-key-exception': 'fslogix-cloud-cache' })
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [resourceGroups]
+}
+
 // ---------------------------------------------------------------------------
 // Monitoring and session hosts
 // ---------------------------------------------------------------------------
@@ -629,7 +726,8 @@ module avdMonitoring '../modules/avd/monitoring/main.bicep' = {
     hostPoolResourceId: hostPoolResourceId
     sessionHostPrefix: sessionHosts.namePrefix
     maxSessionLimit: maxSessionLimit
-    profileStorageAccountResourceId: fslogixEnabled ? storageAccountResourceId : ''
+    // Share capacity and latency alerts apply to the Azure Files store only.
+    profileStorageAccountResourceId: useAzureFiles ? storageAccountResourceId : ''
     profileShareQuotaGiB: shareQuotaGiB
     actionGroupResourceId: enableAlerts ? (monitoring.?actionGroupResourceId ?? '') : ''
     baseSeverity: isProd ? 1 : 3
@@ -677,17 +775,23 @@ module avdSessionHosts '../modules/avd/session-hosts/main.bicep' = {
     fslogix: {
       enabled: fslogixEnabled
       configurationMethod: fslogix.?configurationMethod ?? 'RunCommand'
-      profileLocations: ['\\\\${storageAccountName}.file.${az.environment().suffixes.storage}\\profiles']
+      storageType: storageType
+      profileLocations: useAzureFiles
+        ? ['\\\\${storageAccountName}.file.${az.environment().suffixes.storage}\\profiles']
+        : []
+      blobStorageAccountResourceId: useBlobCloudCache ? blobStorageAccountResourceId : ''
+      blobKeyName: fslogix.?blobKeyName ?? 'key1'
       cloudCache: fslogix.?cloudCache ?? false
       sizeInMBs: fslogix.?profileSizeInMBs ?? 30000
     }
-    entraKerberos: directoryService == 'AADKERB'
+    entraKerberos: useAzureFiles && directoryService == 'AADKERB'
+    cloudOnlyIdentities: isCloudOnly
     diskEncryptionSetResourceId: sessionHosts.?diskEncryptionSetResourceId
     lock: lock
     tags: union(tags, { 'avd-host-pool': hostPoolName })
     enableTelemetry: enableTelemetry
   }
-  dependsOn: [avdHostPool, profileStorage, firewallRules]
+  dependsOn: [avdHostPool, profileStorage, profileBlobStorage, firewallRules]
 }
 
 // ---------------------------------------------------------------------------
@@ -703,8 +807,10 @@ output workspaceResourceId string = avdWorkspace.outputs.resourceId
 @description('Session host names.')
 output sessionHostNames string[] = avdSessionHosts.outputs.names
 
-@description('Resource ID of the FSLogix storage account, empty when disabled.')
-output profileStorageAccountResourceId string = fslogixEnabled ? profileStorage!.outputs.resourceId : ''
+@description('Resource ID of the FSLogix storage account (file share or Cloud Cache blob account), empty when disabled.')
+output profileStorageAccountResourceId string = useAzureFiles
+  ? profileStorage!.outputs.resourceId
+  : (useBlobCloudCache ? profileBlobStorage!.outputs.resourceId : '')
 
 @description('Resource ID of the spoke virtual network.')
 output virtualNetworkResourceId string = spoke.outputs.resourceId

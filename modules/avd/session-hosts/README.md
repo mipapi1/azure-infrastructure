@@ -5,8 +5,10 @@ Session hosts for one host pool, built on the AVM virtual machine module, which 
 - Host pool registration through the DSC extension. The registration token is read from the host pool during the deployment and only passed in protected settings.
 - Trusted Launch, encryption at host and an optional disk encryption set.
 - FSLogix profile container settings through a Run Command (`scripts/Set-FslogixConfiguration.ps1`), unless Intune or Group Policy manages them.
+  - Azure Files (SMB): `VHDLocations` or SMB Cloud Cache; with Entra Kerberos the script also sets the client Kerberos keys and checks that `WinHttpAutoProxySvc` and `iphlpsvc` can run.
+  - Blob Cloud Cache: the module reads the storage account key with `listKeys()` and passes the connection string only as a protected Run Command parameter; the script stores it with `frx add-secure-key` and references it from `CCDLocations` (`type=azure`).
 
-Hosts are named `<namePrefix>-<nnn>`. Raise `startIndex` to add hosts without renaming existing ones. See D-012 and D-014 in `docs/DECISIONS.md`.
+Hosts are named `<namePrefix>-<nnn>`. Raise `startIndex` to add hosts without renaming existing ones. See D-012, D-014 and D-025 in `docs/DECISIONS.md`.
 
 ## Parameters
 
@@ -32,6 +34,7 @@ Hosts are named `<namePrefix>-<nnn>`. Raise `startIndex` to add hosts without re
 | `dataCollectionRuleResourceIds` | string[] | no | `[]` | Data collection rules to associate (AVD Insights, baseline VM rules). |
 | `fslogix` | object | no | `{"enabled":false}` | FSLogix profile container settings. |
 | `entraKerberos` | bool | no | computed | Use Entra Kerberos for Azure Files (sets CloudKerberosTicketRetrievalEnabled). Defaults to true for Entra-joined hosts. |
+| `cloudOnlyIdentities` | bool | no | `false` | Users are cloud-only Entra identities. The FSLogix Run Command then also checks the documented Windows build for cloud-only Entra Kerberos. |
 | `encryptionAtHost` | bool | no | `true` | Enable encryption at host (temp disk and caches encrypted at rest). |
 | `diskEncryptionSetResourceId` | string | no |  | Resource ID of a disk encryption set for customer-managed keys. |
 | `agentConfigurationZipUri` | string | no | computed | URL of the AVD agent DSC configuration package. Microsoft publishes new versions; update after testing. |

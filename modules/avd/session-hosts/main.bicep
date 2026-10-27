@@ -86,9 +86,15 @@ param fslogix {
   enabled: bool
   @description('Optional. RunCommand writes the registry settings during deployment. None leaves it to Intune or Group Policy (the recommended method when either exists).')
   configurationMethod: ('RunCommand' | 'None')?
-  @description('Conditional. UNC paths of the profile shares, in priority order.')
+  @description('Optional. AzureFiles (SMB, default) or BlobCloudCache (Cloud Cache on page blobs with an account key, no Kerberos).')
+  storageType: ('AzureFiles' | 'BlobCloudCache')?
+  @description('Conditional. AzureFiles: UNC paths of the profile shares, in priority order.')
   profileLocations: string[]?
-  @description('Optional. Use Cloud Cache with every location as a provider. Defaults to false.')
+  @description('Conditional. BlobCloudCache: resource ID of the blob storage account. Its key is read during the deployment and only passed as a protected Run Command parameter.')
+  blobStorageAccountResourceId: string?
+  @description('Optional. BlobCloudCache: account key to use (key1 or key2). Defaults to key1.')
+  blobKeyName: ('key1' | 'key2')?
+  @description('Optional. AzureFiles: use Cloud Cache with every location as a provider. Defaults to false.')
   cloudCache: bool?
   @description('Optional. Maximum container size in MB. Defaults to 30000.')
   sizeInMBs: int?
@@ -96,6 +102,9 @@ param fslogix {
 
 @description('Optional. Use Entra Kerberos for Azure Files (sets CloudKerberosTicketRetrievalEnabled). Defaults to true for Entra-joined hosts.')
 param entraKerberos bool = identityMode == 'EntraJoined'
+
+@description('Optional. Users are cloud-only Entra identities. The FSLogix Run Command then also checks the documented Windows build for cloud-only Entra Kerberos.')
+param cloudOnlyIdentities bool = false
 
 @description('Optional. Enable encryption at host (temp disk and caches encrypted at rest).')
 param encryptionAtHost bool = true
@@ -120,10 +129,22 @@ var intuneMdmId = '0000000a-0000-0000-c000-000000000000'
 var hostPoolSegments = split(hostPoolResourceId, '/')
 var hostNames = [for i in range(startIndex, count): '${namePrefix}-${padLeft(i, 3, '0')}']
 var useRunCommand = fslogix.enabled && (fslogix.?configurationMethod ?? 'RunCommand') == 'RunCommand'
+var useBlobCloudCache = fslogix.enabled && (fslogix.?storageType ?? 'AzureFiles') == 'BlobCloudCache'
+var blobKeyName = fslogix.?blobKeyName ?? 'key1'
+// ARM evaluates the scope even when the reference is unused, so the fallback must be a valid ID.
+var blobAccountSegments = split(
+  useBlobCloudCache ? fslogix.?blobStorageAccountResourceId! : resourceId('Microsoft.Storage/storageAccounts', 'unused'),
+  '/'
+)
 
 resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2025-10-10' existing = {
   name: last(hostPoolSegments)
   scope: resourceGroup(hostPoolSegments[2], hostPoolSegments[4])
+}
+
+resource blobStorageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' existing = if (useBlobCloudCache) {
+  name: last(blobAccountSegments)
+  scope: resourceGroup(blobAccountSegments[2], blobAccountSegments[4])
 }
 
 module virtualMachines 'br/public:avm/res/compute/virtual-machine:0.22.3' = [
@@ -281,11 +302,25 @@ resource fslogixConfiguration 'Microsoft.Compute/virtualMachines/runCommands@202
         script: loadTextContent('scripts/Set-FslogixConfiguration.ps1')
       }
       parameters: [
+        { name: 'StorageType', value: fslogix.?storageType ?? 'AzureFiles' }
         { name: 'ProfileLocations', value: join(fslogix.?profileLocations ?? [], ';') }
         { name: 'CloudCache', value: string(fslogix.?cloudCache ?? false) }
         { name: 'SizeInMBs', value: string(fslogix.?sizeInMBs ?? 30000) }
         { name: 'EntraKerberos', value: string(entraKerberos) }
+        { name: 'CloudOnly', value: string(cloudOnlyIdentities) }
+        // Not secret: names the key in use, so switching keys re-runs the command.
+        { name: 'BlobKeyName', value: useBlobCloudCache ? blobKeyName : '' }
       ]
+      // The connection string is built here, at deployment time, and only travels in
+      // protected parameters; the script stores it encrypted with frx add-secure-key.
+      protectedParameters: useBlobCloudCache
+        ? [
+            {
+              name: 'BlobConnectionString'
+              value: 'DefaultEndpointsProtocol=https;AccountName=${blobStorageAccount.name};AccountKey=${filter(blobStorageAccount!.listKeys().keys, k => k.keyName == blobKeyName)[0].value};EndpointSuffix=${environment().suffixes.storage}'
+            }
+          ]
+        : []
     }
     dependsOn: [agentRegistration]
   }

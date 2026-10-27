@@ -93,6 +93,9 @@ type identityType = {
   @description('Optional. EntraJoined (default) or DomainJoined (AD DS or Entra Domain Services).')
   mode: ('EntraJoined' | 'DomainJoined')?
 
+  @description('Optional. Where user accounts are mastered. Hybrid (default): synced from AD DS. CloudOnly: created in Microsoft Entra ID only; requires mode EntraJoined, and Azure Files profile storage needs the Azure public cloud.')
+  userIdentitySource: ('Hybrid' | 'CloudOnly')?
+
   @description('Optional. Enroll Entra-joined hosts in Intune. Defaults to false.')
   intuneEnrollment: bool?
 
@@ -122,7 +125,13 @@ type fslogixType = {
   @description('Optional. RunCommand (default) configures hosts during deployment; None leaves configuration to Intune or Group Policy.')
   configurationMethod: ('RunCommand' | 'None')?
 
-  @description('Optional. Use FSLogix Cloud Cache. Defaults to false.')
+  @description('Optional. AzureFiles (default): premium file share with identity-based (Kerberos) access. BlobCloudCache: Cloud Cache on a blob storage account with an account key stored on each host; no Kerberos, works in every cloud, but needs shared key access.')
+  storageType: ('AzureFiles' | 'BlobCloudCache')?
+
+  @description('Optional. BlobCloudCache only: storage account key the hosts use. Switch to the other key, redeploy, then regenerate the old one to rotate. Defaults to key1.')
+  blobKeyName: ('key1' | 'key2')?
+
+  @description('Optional. AzureFiles only: use FSLogix Cloud Cache over SMB. BlobCloudCache always uses Cloud Cache. Defaults to false.')
   cloudCache: bool?
 
   @description('Optional. Profile share quota in GiB (premium shares are billed on provisioned size). Defaults to 1024 in prod and 100 in staging.')
@@ -131,10 +140,10 @@ type fslogixType = {
   @description('Optional. Maximum profile container size in MB. Defaults to 30000.')
   profileSizeInMBs: int?
 
-  @description('Optional. Azure Files identity source. Defaults to AADKERB for EntraJoined and AADDS for DomainJoined. AD needs activeDirectoryProperties from an AD DS storage account join.')
+  @description('Optional. AzureFiles only: identity source. Defaults to AADKERB for EntraJoined and AADDS for DomainJoined. AD needs activeDirectoryProperties from an AD DS storage account join. CloudOnly users require AADKERB.')
   directoryService: ('AADKERB' | 'AADDS' | 'AD')?
 
-  @description('Optional. Domain properties for AD DS (or hybrid Entra Kerberos) authentication.')
+  @description('Optional. AzureFiles only: domain properties for AD DS (or hybrid Entra Kerberos) authentication. Ignored for CloudOnly users.')
   activeDirectoryProperties: object?
 }
 

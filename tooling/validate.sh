@@ -71,7 +71,7 @@ run_psrule() {
   pwsh -NoProfile -Command '
     $ErrorActionPreference = "Stop"
     Import-Module PSRule.Rules.Azure
-    $files = git ls-files -co --exclude-standard "*.bicepparam" | Where-Object { $_ -notmatch "^(\.work|az-image-builder/tests)/" }
+    $files = git ls-files -co --exclude-standard "*.bicepparam" | Where-Object { $_ -notmatch "^(\.work|az-image-builder/tests|az-[^/]+/tests/invalid)/" }
     $result = Invoke-PSRule -Module PSRule.Rules.Azure -InputPath $files -Option ps-rule.yaml -Outcome Fail, Error -WarningAction SilentlyContinue
     $result | Sort-Object TargetName, RuleName | Format-Table -AutoSize TargetName, RuleName, Outcome -Wrap | Out-String -Width 200
     if ($result) { exit 1 }

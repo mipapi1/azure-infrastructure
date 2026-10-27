@@ -38,6 +38,11 @@ suppression:
   # D-005: image builder content storage, reproducible from the publish tools.
   Azure.Storage.UseReplication:
     - aibprodeusst
+    # D-007: staging FSLogix blob store (test parameter file) is LRS to save cost.
+    - avdcostagingeusfslb4fabb
+  # D-025: FSLogix Cloud Cache on blob authenticates with the account key; tagged shared-key-exception.
+  Azure.Storage.LocalAuth:
+    - avdcostagingeusfslb4fabb
   # D-007: staging runs without zones or workspace replication to save cost.
   Azure.Firewall.AvailabilityZone:
     - hub-staging-eus-afw

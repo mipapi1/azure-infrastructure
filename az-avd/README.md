@@ -43,25 +43,76 @@ az deployment sub create --location eastus --name avd-prod \
   --template-file az-avd/main.bicep --parameters az-avd/params/prod.bicepparam
 ```
 
-### After the first deployment (Entra Kerberos)
+### After the first deployment (Azure Files with Entra Kerberos)
 
-1. Grant admin consent to the storage account's Entra application (Entra admin center > App registrations > `[Storage Account] <name>.file.core.windows.net` > API permissions). Without consent, Kerberos tickets can't be issued.
-2. Exclude that application from Conditional Access policies that require MFA, as Microsoft documents for Azure Files.
-3. Set NTFS permissions on the share root once (from an admin session host, as a member of the admin group): users need Modify on "this folder only", creator owner Modify on subfolders and files.
+These steps apply when `fslogix.storageType` is `AzureFiles` (the default) with `AADKERB`, for hybrid and cloud-only users alike. The storage account's Entra application is created automatically and named `[Storage Account] <account>.file.core.windows.net`. Don't change it beyond the documented edits below.
+
+1. **Admin consent.** Entra admin center > App registrations > All applications > that application > API permissions > *Grant admin consent* for `openid`, `profile` and `User.Read`. Without consent, Kerberos tickets can't be issued.
+2. **Conditional Access.** Exclude that application from every policy that requires MFA. Entra Kerberos for Azure Files can't satisfy MFA, and mounts fail with system error 1327.
+3. **Application edits** (private link always, cloud-only groups for cloud-only users). Run [`scripts/Set-CloudOnlyKerberos.ps1`](scripts/Set-CloudOnlyKerberos.ps1) with `-WhatIf` first, then without it:
+   ```powershell
+   ./az-avd/scripts/Set-CloudOnlyKerberos.ps1 -StorageAccountName <account> -TenantId <tenant-id> -WhatIf
+   ```
+   It adds the `privatelink.file` identifier URIs (hosts reach the share through a private endpoint, and without them clients fall back to NTLM with error 1326). For cloud-only users it also adds the `kdc_enable_cloud_group_sids` tag (preview), which is mandatory: without it, cloud-only group SIDs are left out of tickets and share access fails. Use `-SkipCloudGroupTag` for hybrid-only tenants. The script needs Cloud Application Administrator (or `Application.ReadWrite.All`) and never runs as part of the deployment.
+4. **App management policies.** If a tenant or app management policy blocks password credentials on service principals, or limits their lifetime to under 366 days, grant an exception for the *Storage Resource Provider* (app ID `a6aa9161-5291-40bb-8c5c-923b567bee3b`). Otherwise enabling Entra Kerberos fails with "The request to Microsoft Graph failed with code BadRequest".
+5. **Root folder permissions.** FSLogix needs users to have Modify on the share root (this folder only) and creator owner Modify on subfolders and files.
+   - Hybrid users: set them with `icacls` from a host with line of sight to a domain controller.
+   - Cloud-only users: File Explorer can't set permissions for cloud-only identities. In the Azure portal, open the storage account > File shares > `profiles` > **Manage access** (shown once Entra Kerberos is configured) and add the users group and the admin group there.
+6. **Client setting, if Intune manages hosts.** The FSLogix Run Command writes `CloudKerberosTicketRetrievalEnabled` and `LoadCredKeyFromProfile` itself. When `fslogix.configurationMethod` is `None`, set `Kerberos/CloudKerberosTicketRetrievalEnabled = 1` with an Intune **Settings Catalog** policy. The OMA-URI method doesn't work on multi-session hosts.
+
+Share-level RBAC changes take up to 30 minutes, and group changes reach Kerberos tickets at the user's next sign-in.
+
+### Entra Kerberos limits to know
+
+- **Group SIDs.** A Kerberos ticket can carry at most 1,010 group SIDs, on-premises and cloud combined. Users above the limit sign in fine but can't mount the share; the Entra sign-in log shows error **140011 `KerberosUsersGroupNumberExceeded`**. Reduce their group memberships (nested and dynamic groups count).
+- **Ticket lifetime.** Entra ID doesn't renew Kerberos TGTs, so a session that stays connected for about 10 hours can lose access to the share until the user signs out and in again. Entra-only clients have no workaround (cloud Kerberos trust needs AD DS). Size the pools' session limits and log-off policy with this in mind, or use `BlobCloudCache`.
+- **Network changes.** Some network changes clear the cached KDC proxy configuration. Microsoft documents a *Specify KDC proxy servers for Kerberos clients* policy that keeps it.
+- **Required services.** `WinHttpAutoProxySvc` and `iphlpsvc` must be running. The FSLogix Run Command checks both and fails the deployment if either is disabled. Neither the image builder's STIG scripts nor the STIG GPO package disable them. Disable WPAD through its registry setting if needed, never by disabling the service.
 
 ## Identity modes
 
-| | EntraJoined (default) | DomainJoined |
-|---|---|---|
-| Directory | Microsoft Entra ID only | AD DS or Microsoft Entra Domain Services |
-| Join | `AADLoginForWindows` extension, optional Intune enrollment | `JsonADDomainExtension` with the join account |
-| Sign-in | Entra SSO (`enablerdsaadauth:i:1`), VM User/Administrator Login roles | Kerberos/NTLM to the domain; no VM login roles |
-| FSLogix storage | Azure Files with Entra Kerberos (`AADKERB`) | `AADDS`, or `AD` with `activeDirectoryProperties` after an AD DS storage account join |
-| Line of sight | None needed | Session hosts need DNS and network line of sight to domain controllers |
-| Group Policy | No; use Intune | Yes |
-| Trade-offs | Simplest, no domain controllers; apps that need Kerberos to on-premises servers require hybrid identities and cloud Kerberos trust | Supports legacy apps and GPO; adds domain controller dependency and a join credential to protect |
+`identity.mode` decides how hosts join a directory; `identity.userIdentitySource` says where user accounts live; `fslogix.storageType` picks the profile store.
+
+| | EntraJoined, hybrid users (default) | EntraJoined, cloud-only users | Kerberos-free (`BlobCloudCache`) | DomainJoined |
+|---|---|---|---|---|
+| Settings | `mode: 'EntraJoined'` | `mode: 'EntraJoined'`, `userIdentitySource: 'CloudOnly'` | `fslogix.storageType: 'BlobCloudCache'` (any user source) | `mode: 'DomainJoined'` |
+| Directory | Entra ID, users synced from AD DS | Entra ID only; no AD DS, no Entra Connect | Entra ID (or a domain, if domain joined) | AD DS or Microsoft Entra Domain Services |
+| Join | `AADLoginForWindows`, optional Intune | `AADLoginForWindows`, optional Intune | As per `mode` | `JsonADDomainExtension` with the join account |
+| Sign-in to AVD | Entra SSO (`enablerdsaadauth:i:1`) | Entra SSO | Entra SSO | Kerberos/NTLM to the domain |
+| Profile store | Azure Files, Entra Kerberos (`AADKERB`) | Azure Files, Entra Kerberos with cloud-only group SIDs | Cloud Cache on page blobs, account key on each host | Azure Files with `AADDS`, or `AD` after an AD DS storage account join |
+| Shared key access | Off | Off | **On** for this one account (tagged `shared-key-exception`) | Off |
+| Clouds | All | Azure public cloud only (US Gov and China rejected by the template) | All | All |
+| Client OS | Windows 11 multi-session, current updates | Windows 11 24H2/25H2 build `.8116` or later (KB5079391), 26H1 build 28000.1764 or later | Any supported | Any supported |
+| Post-deploy steps | Consent, CA exclusion, private link URIs, `icacls` | Consent, CA exclusion, script (tag + URIs), **Manage access** | None for storage | AD DS storage account join (`AD`), `icacls` |
+| Domain controllers | None needed (ACL changes need one) | None | None | Line of sight from hosts |
+| Group Policy | No; use Intune | No; use Intune | As per `mode` | Yes |
+
+The template rejects combinations that can't work before creating anything: cloud-only users with `DomainJoined`, cloud-only users with `AADDS`/`AD`, and cloud-only users on Azure Files in Azure US Government or China (`fail()` in `main.bicep`). Where share-level permissions are concerned, cloud-only users and groups can get per-identity RBAC in every Azure public region.
+
+**AVD sign-in doesn't use Kerberos.** With `enablerdsaadauth:i:1`, the client authenticates to the Entra-joined host with Microsoft Entra ID (RDS AAD Auth), and the VM User/Administrator Login roles authorize it. Kerberos and domain controllers only matter for the profile share. With `BlobCloudCache`, no part of the sign-in or profile path uses Kerberos.
+
+**Confirm the host build** (cloud-only): `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' | Select CurrentBuildNumber, UBR` on a host; 26200 with UBR 8116 or higher is 25H2 with KB5079391. The FSLogix Run Command logs a warning when the build is older. For gallery images, check the build in the image builder's validation output before publishing.
 
 The domain join password is a `@secure()` parameter. Pass it from Key Vault with `az.getSecret()` in the parameter file or with an environment variable; it only reaches the VM in the extension's protected settings.
+
+## Kerberos-free profiles: Cloud Cache on blob storage
+
+`fslogix.storageType: 'BlobCloudCache'` deploys a separate StorageV2 account (`...fslb...`, ZRS in prod) on a blob private endpoint in the hub `privatelink.blob` zone, with public network access off, and configures FSLogix Cloud Cache with a `type=azure` provider. Use it for Azure Government or China with cloud-only users, or to avoid Entra Kerberos and its limits altogether.
+
+How the key is handled:
+- The deployment reads the selected account key (`fslogix.blobKeyName`, default `key1`) with `listKeys()` and passes the connection string only as a **protected** Run Command parameter. It's never in parameters, outputs or deployment history.
+- On each host, the Run Command stores it in Credential Manager with `frx.exe add-secure-key -key profiles-<key>` and `CCDLocations` references it as `connectionString="|fslogix/profiles-<key>|"`.
+
+Trade-offs, accepted explicitly (D-025):
+- This account has **shared key access on**. Anyone holding the key has full access to every profile in it. The account carries the tag `shared-key-exception: fslogix-cloud-cache`, which the governance policy treats as the approved exception.
+- A local administrator on any session host can recover the key from Credential Manager. Treat host admin rights as equivalent to profile-store access: keep the admin group small and use the break-glass account only as documented.
+- Profile access isn't per user. Isolation relies on FSLogix's own container naming, not on storage permissions.
+
+**Rotate the key** without downtime: regenerate `key2` (`az storage account keys renew -g <rg> -n <account> --key secondary`), set `fslogix.blobKeyName: 'key2'` and redeploy (the Run Command re-runs because the key name changes, replaces the secure key and leaves profiles in place), then regenerate `key1`. Next time, go back the other way.
+
+### Not used: Azure Files with managed identities
+
+Azure Files SMB access with managed identities (OAuth over SMB) became generally available in 2026 Q2. It authenticates workloads (VMs, AKS pods) by their managed identity, not users, so it can't give each user their own profile container and isn't a fit for FSLogix profiles. It's noted here as a keyless option for application shares on Entra-joined hosts; nothing in this workload enables it.
 
 ## Registration token
 
@@ -75,7 +126,7 @@ Pooled pools get a scaling plan with weekday and weekend schedules (ramp-up 07:0
 
 - Diagnostic settings (all logs) on the host pool, application groups, workspace, scaling plan, network and profile storage, all to the central workspace.
 - Data collection rule `microsoft-avdi-<pool>` with the counters and events AVD Insights needs; associated with every host together with the landing zone's baseline Windows rule. Open **Azure Virtual Desktop > Insights** and pick the host pool to use the workbook.
-- Alerts: no available hosts (Sev 1 in prod), unhealthy host, host near the session limit, FSLogix errors, profile storage latency above 50 ms, profile share above 80% of quota.
+- Alerts: no available hosts (Sev 1 in prod), unhealthy host, host near the session limit, FSLogix errors, profile storage latency above 50 ms, profile share above 80% of quota. The storage latency and quota alerts apply to the Azure Files store; Cloud Cache on blob storage has no quota, and FSLogix errors are still alerted from the hosts.
 
 ## Network
 
@@ -89,7 +140,9 @@ Session hosts have no public IPs. All egress goes through the hub firewall, and 
 | Certificate revocation | `oneocsp.microsoft.com`, `www.microsoft.com`, `ctldl.windowsupdate.com` | 80, 443 |
 | Intune (when enabled) | `*.manage.microsoft.com`, `*.dm.microsoft.com`, `enterpriseregistration.windows.net` | 443 |
 
-The full list is in [Required FQDNs and endpoints for Azure Virtual Desktop](https://learn.microsoft.com/azure/virtual-desktop/required-fqdn-endpoint). DNS (53) and NTP (123) are allowed by the hub's default rules. Private endpoints cover the host pool connection, the workspace feed and Azure Files. The global feed private endpoint (`privatelink-global.wvd.microsoft.com`) is one per tenant and belongs on a dedicated, empty workspace; it isn't created here.
+The full list is in [Required FQDNs and endpoints for Azure Virtual Desktop](https://learn.microsoft.com/azure/virtual-desktop/required-fqdn-endpoint). DNS (53) and NTP (123) are allowed by the hub's default rules. Private endpoints cover the host pool connection, the workspace feed and the profile store (Azure Files, or blob for `BlobCloudCache`). The global feed private endpoint (`privatelink-global.wvd.microsoft.com`) is one per tenant and belongs on a dedicated, empty workspace; it isn't created here.
+
+`useFirewallIpGroups: true` creates IP Groups for the session host and private endpoint subnets (`<pool>-ipg-session-hosts`, `-ipg-private-endpoints`) and sources every AVD rule from the session host group. Other workloads (for example rules that let session hosts reach an internal Git host) reference them through the `ipGroupResourceIds` output instead of repeating the prefixes (D-028).
 
 ## Staging vs prod
 
@@ -139,6 +192,6 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 | `hostPoolResourceId` | string | Resource ID of the host pool. |
 | `workspaceResourceId` | string | Resource ID of the workspace. |
 | `sessionHostNames` | string[] | Session host names. |
-| `profileStorageAccountResourceId` | string | Resource ID of the FSLogix storage account, empty when disabled. |
+| `profileStorageAccountResourceId` | string | Resource ID of the FSLogix storage account (file share or Cloud Cache blob account), empty when disabled. |
 | `virtualNetworkResourceId` | string | Resource ID of the spoke virtual network. |
 <!-- END_PARAMS -->

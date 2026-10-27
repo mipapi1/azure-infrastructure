@@ -25,6 +25,7 @@ jobs:
       - run: make build
       - run: make lint
       - run: make format-check
+      - run: make snapshot
 
   psrule:
     name: PSRule for Azure
