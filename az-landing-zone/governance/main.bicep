@@ -4,6 +4,7 @@ metadata description = 'Management group hierarchy aligned to Azure Landing Zone
 targetScope = 'managementGroup'
 
 import { environmentType } from '../../modules/shared/types.bicep'
+import { eligibleRoleAssignmentType } from 'types.bicep'
 
 @description('Required. Environment. prod builds the live hierarchy; staging builds a separate canary hierarchy to test policy changes first.')
 param environment environmentType
@@ -37,6 +38,12 @@ param enforcementMode ('Default' | 'DoNotEnforce') = environment == 'prod' ? 'De
 
 @description('Optional. Subscription IDs to place under each management group, keyed by short name (platform, connectivity, identity, management, corp, online, sandbox, decommissioned).')
 param subscriptionPlacement object = {}
+
+@description('Optional. PIM-eligible Azure role assignments on the hierarchy, instead of standing assignments. Find standing access with scripts/Get-StandingPrivilegedAccess.ps1.')
+param eligibleRoleAssignments eligibleRoleAssignmentType[] = []
+
+@description('Optional. Start of new eligibility schedules. Leave the default.')
+param eligibilityStartTime string = utcNow()
 
 @description('Optional. Enable AVM usage telemetry.')
 param enableTelemetry bool = true
@@ -257,9 +264,40 @@ module policyAssignments 'br/public:avm/ptn/authorization/policy-assignment:0.5.
   }
 ]
 
-@description('Management group IDs keyed by short name.')
-output managementGroupIds object = union(
+// ---------------------------------------------------------------------------
+// Privileged access: PIM-eligible role assignments
+// ---------------------------------------------------------------------------
+
+var managementGroupIds = union(
   { root: prefix },
   toObject(children, c => c.key, c => '${prefix}-${c.key}'),
   toObject(grandchildren, c => c.key, c => '${prefix}-${c.key}')
 )
+
+module eligibleAssignments 'br/public:avm/ptn/authorization/pim-role-assignment:0.1.2' = [
+  for (e, i) in eligibleRoleAssignments: {
+    name: '${uniqueString(deployment().name)}-pim-${i}'
+    scope: managementGroup(managementGroupIds[e.managementGroup])
+    params: {
+      principalId: e.principalId
+      roleDefinitionIdOrName: '/providers/Microsoft.Authorization/roleDefinitions/${e.roleDefinitionId}'
+      managementGroupId: managementGroupIds[e.managementGroup]
+      requestType: e.?requestType ?? 'AdminAssign'
+      justification: e.?justification ?? 'Platform governance: eligible instead of standing access.'
+      pimRoleAssignmentType: {
+        roleAssignmentType: 'Eligible'
+        scheduleInfo: {
+          durationType: 'AfterDuration'
+          duration: 'P${e.?durationDays ?? 365}D'
+          startTime: eligibilityStartTime
+        }
+      }
+      location: location
+      enableTelemetry: enableTelemetry
+    }
+    dependsOn: [grandchildGroups]
+  }
+]
+
+@description('Management group IDs keyed by short name.')
+output managementGroupIds object = managementGroupIds

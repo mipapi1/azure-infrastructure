@@ -44,3 +44,6 @@ param defender = {
 // Hybrid connectivity and DDoS protection are off by default.
 param gateway = { type: 'None' }
 param enableDdosProtection = false
+
+// Emergency access accounts (governance/scripts/New-BreakGlassAccounts.ps1): Sev 0 alerts on any use.
+// param breakGlassAccountObjectIds = ['<break-glass-01-object-id>', '<break-glass-02-object-id>']

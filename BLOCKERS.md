@@ -91,3 +91,20 @@ Items found while hardening the platform. Each lists what was tried, the default
 - `Get-AzRmStorageShare -GetShareUsage` and `Unregister-AzAutomationScheduledRunbook -JobScheduleId`: used from the Az module; only `Update-AzRmStorageShare` and `Import-AzAutomationRunbook` were checked on Microsoft Learn.
 - Workbook metric item JSON (`MetricsItem/2.0`, `chartType`, metric id format): no schema reference on Microsoft Learn; written to the format the portal exports. Check the workbook renders after the first deployment.
 - `StorageFileLogs` column names (`StatusCode`, `StatusText`, `ServerLatencyMs`, `DurationMs`, `AuthenticationType`, `CallerIpAddress`): written from memory of the table schema; not checked against the reference or run against a workspace.
+
+## Phase 5: privileged access
+
+### B-017 Eligibility requests need requestType changes after the first deployment
+- **What was found:** PIM rejects `AdminAssign` for an eligibility that already exists, so redeploying the same entries fails.
+- **Default:** `requestType` per entry (default `AdminAssign`), changed to `AdminUpdate` after the first run; documented in the governance README.
+- **Decision needed:** whether to accept that, or wrap eligibilities in a deployment script that checks for existing ones (needs an identity with User Access Administrator on the hierarchy).
+
+### B-018 Tenant-level prerequisites outside the deployments
+- Microsoft Entra diagnostic settings (sign-in and audit logs to the workspace), the Temporary Access Pass method, the Conditional Access exclusion group and PIM licensing are tenant settings. Documented, not automated.
+- **Decision needed:** who owns these settings and whether a tenant-scope pipeline identity should apply them.
+
+### B-019 Not verified
+- `Get-AzRoleAssignmentScheduleInstance` property names (`AssignmentType`, `EndDateTime`, `PrincipalDisplayName`, `RoleDefinitionDisplayName`, `MemberType`) and the `isPrivileged` property in the v1.0 Graph role definition: written from the API shape, not checked against a tenant.
+- PIM for Groups policy lookup filter (`scopeId`/`scopeType eq 'Group'`/`roleDefinitionId eq 'member'`) on `roleManagementPolicyAssignments`: from the Graph PIM for Groups overview's linked APIs; the exact filter wasn't confirmed on the List page.
+- The `microsoft.aadiam/diagnosticSettings` API version (2017-04-01) and the category names in the README command.
+- PIM's default Azure resource role setting for permanent eligibility (the template uses 365-day eligibilities so it doesn't depend on it).

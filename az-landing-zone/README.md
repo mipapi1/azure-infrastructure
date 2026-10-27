@@ -88,6 +88,18 @@ az deployment sub create --location eastus --name landing-zone \
 - **Monitoring.** Ingestion is private only, through AMPLS. Queries stay open by default so the portal works off-network; set `monitoring.publicNetworkAccessForQuery` and `amplsQueryAccessMode` to lock them down.
 - **Policy.** The governance deployment assigns built-in definitions only. For the full Azure Landing Zones policy set (custom definitions such as Deny-Subnet-Without-Nsg), use the [ALZ library](https://github.com/Azure/Azure-Landing-Zones-Library) through the ALZ Bicep accelerator on top of this hierarchy; the management group IDs match its archetypes.
 
+### Emergency access alerts
+
+`breakGlassAccountObjectIds` creates two Sev 0 log alerts on the central workspace: any sign-in by an emergency access account (`SigninLogs`) and any directory change made by or to one (`AuditLogs`), both to the platform action group. Those tables only exist once Microsoft Entra sends its logs to the workspace, a tenant-level diagnostic setting that a Security Administrator (or Global Administrator) creates once:
+
+```bash
+az rest --method put \
+  --url "https://management.azure.com/providers/microsoft.aadiam/diagnosticSettings/to-central-law?api-version=2017-04-01" \
+  --body '{"properties":{"workspaceId":"<workspace resource id>","logs":[{"category":"SignInLogs","enabled":true},{"category":"AuditLogs","enabled":true},{"category":"NonInteractiveUserSignInLogs","enabled":true},{"category":"ServicePrincipalSignInLogs","enabled":true}]}}'
+```
+
+The alert rules skip query validation so they can be created before the tables exist. See `governance/README.md` (Privileged access) for creating the accounts.
+
 ## Parameters
 
 <!-- BEGIN_PARAMS -->
@@ -107,6 +119,7 @@ az deployment sub create --location eastus --name landing-zone \
 | `budget` | budgetType | no |  | Monthly budget. Omit to skip. |
 | `defender` | defenderType | no |  | Microsoft Defender for Cloud settings. Omit to leave Defender unchanged. |
 | `additionalPrivateDnsZones` | string[] | no | `[]` | Private DNS zones in addition to the defaults (Azure Monitor, Key Vault, Storage, AVD, ACR, AKS, Grafana). |
+| `breakGlassAccountObjectIds` | string[] | no | `[]` | Object IDs of the emergency access (break-glass) accounts (governance/scripts/New-BreakGlassAccounts.ps1). Each one gets Sev 0 alerts on any sign-in and on any directory change made by or to it. Needs Microsoft Entra sign-in and audit logs in the workspace. |
 | `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
 | `deploymentTime` | string | no | computed | Generated. Do not set. Used for the budget start date. |
 

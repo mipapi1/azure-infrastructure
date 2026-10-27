@@ -61,6 +61,9 @@ param defender defenderType?
 @description('Optional. Private DNS zones in addition to the defaults (Azure Monitor, Key Vault, Storage, AVD, ACR, AKS, Grafana).')
 param additionalPrivateDnsZones string[] = []
 
+@description('Optional. Object IDs of the emergency access (break-glass) accounts (governance/scripts/New-BreakGlassAccounts.ps1). Each one gets Sev 0 alerts on any sign-in and on any directory change made by or to it. Needs Microsoft Entra sign-in and audit logs in the workspace.')
+param breakGlassAccountObjectIds string[] = []
+
 @description('Optional. Enable AVM usage telemetry.')
 param enableTelemetry bool = true
 
@@ -354,6 +357,58 @@ module actionGroup 'br/public:avm/res/insights/action-group:0.8.0' = {
 // ---------------------------------------------------------------------------
 // Connectivity: hub network, firewall, Bastion, gateway, private DNS
 // ---------------------------------------------------------------------------
+
+// Emergency access accounts: every use is an incident to review. The queries need SigninLogs and
+// AuditLogs, which arrive once Microsoft Entra diagnostic settings send them to this workspace
+// (a tenant-level setting, see README); query validation is skipped so the rules can be created first.
+var breakGlassIds = join(map(breakGlassAccountObjectIds, id => '"${id}"'), ', ')
+var breakGlassAlerts = [
+  {
+    key: 'break-glass-sign-in'
+    displayName: 'Emergency access account sign-in'
+    description: 'An emergency access (break-glass) account signed in or tried to. Confirm it was a drill or a declared emergency, then review its actions.'
+    query: 'SigninLogs\n| where UserId in (${breakGlassIds})\n| project TimeGenerated, UserPrincipalName, UserId, IPAddress, ResultType, ResultDescription, AppDisplayName'
+  }
+  {
+    key: 'break-glass-change'
+    displayName: 'Emergency access account changed or used for changes'
+    description: 'A directory change was made by or to an emergency access account (role, credential, group or account change).'
+    query: 'AuditLogs\n| where tostring(InitiatedBy.user.id) in (${breakGlassIds}) or TargetResources has_any (dynamic([${breakGlassIds}]))\n| project TimeGenerated, OperationName, Result, InitiatedBy, TargetResources'
+  }
+]
+
+module breakGlassAlertRules 'br/public:avm/res/insights/scheduled-query-rule:0.6.1' = [
+  for a in (empty(breakGlassAccountObjectIds) ? [] : breakGlassAlerts): {
+    name: '${uniqueString(deployment().name, location)}-sqr-${a.key}'
+    scope: resourceGroup(rgNames.monitoring)
+    params: {
+      name: '${baseName}-${a.key}'
+      location: location
+      alertDisplayName: a.displayName
+      alertDescription: a.description
+      severity: 0
+      scopes: [logAnalytics.outputs.resourceId]
+      evaluationFrequency: 'PT5M'
+      windowSize: 'PT5M'
+      autoMitigate: false
+      skipQueryValidation: true
+      criterias: {
+        allOf: [
+          {
+            query: a.query
+            timeAggregation: 'Count'
+            operator: 'GreaterThan'
+            threshold: 0
+            failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+          }
+        ]
+      }
+      actions: { actionGroupResourceIds: [actionGroup.outputs.resourceId] }
+      tags: tags
+      enableTelemetry: enableTelemetry
+    }
+  }
+]
 
 module ddosPlan 'br/public:avm/res/network/ddos-protection-plan:0.3.2' = if (enableDdosProtection) {
   name: '${uniqueString(deployment().name, location)}-ddos'
