@@ -80,7 +80,7 @@ gallery: { name: 'shared_gal', create: false, resourceGroupName: 'shared-images-
 
 The template identity gets the distributor role on that gallery. Set `definition.create: false` to use image definitions that already exist.
 
-**Firewall or none.** `egress: { mode: 'firewall', firewallPrivateIpAddress: '10.0.0.4', firewallPolicyResourceId: '<id>' }` adds the rules. Omit the policy ID if the firewall team manages the rules, and give them `config/firewall-rules.json`. To skip the firewall, use `egress: { mode: 'natGateway' }`. Add the FQDNs your own scripts download from.
+**Firewall or none.** `egress: { mode: 'firewall', firewallPrivateIpAddress: '10.0.0.4', firewallPolicyResourceId: '<id>' }` adds the rules. Omit the policy ID if the firewall team manages the rules, and give them `config/firewall-rules.json`. To skip the firewall, use `egress: { mode: 'natGateway' }`. Add the FQDNs your own scripts download from. With a policy ID, `useIpGroups: true` creates IP Groups for the build and container instance subnets and sources the rules from them (D-028).
 
 ## STIG
 

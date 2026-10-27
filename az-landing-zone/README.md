@@ -64,6 +64,7 @@ az deployment sub create --location eastus --name landing-zone \
 | `hub` (`hubReferenceType`) | `az-avd`, `az-aks`: spoke peering, default route, DNS through the firewall |
 | `monitoring` (`monitoringReferenceType`) | every workload: diagnostic settings, DCR destinations, alert action group |
 | `firewallPolicyResourceId` | workloads add their own rule collection group to the hub policy |
+| `internalIpGroupResourceId` | rules that need the whole internal address space as an IP Group (empty unless `firewall.useIpGroups`) |
 | `vmDataCollectionRuleResourceIds` | governance VM monitoring policy, AVD session hosts |
 | `keyVaultResourceId`, `encryptionIdentityResourceId` | customer-managed keys |
 
@@ -83,6 +84,7 @@ az deployment sub create --location eastus --name landing-zone \
 
 - **DNS.** The firewall policy enables DNS proxy. Spokes use the firewall IP as their DNS server, the firewall forwards to Azure DNS in the hub, and the hub VNet is linked to every private DNS zone. No zone links per spoke are needed.
 - **Egress.** Spokes send `0.0.0.0/0` to the firewall. The default rule groups (`config/firewall-rules/`) allow DNS, NTP, Windows Update and Azure Monitor from internal ranges. Workloads add their own rule collection groups (AVD and AKS required FQDNs).
+- **IP Groups.** `firewall.useIpGroups: true` creates `<hub>-ipg-internal` (default `10.0.0.0/8`, set `firewall.internalIpGroupAddresses` to change it) and switches the default DNS, NTP and update rules to it, so adding a spoke range is an IP Group change rather than a rule change. Workloads have their own `useFirewallIpGroups` switch for their subnets (D-028). Off by default; turning it on replaces the literal sources in place.
 - **Monitoring.** Ingestion is private only, through AMPLS. Queries stay open by default so the portal works off-network; set `monitoring.publicNetworkAccessForQuery` and `amplsQueryAccessMode` to lock them down.
 - **Policy.** The governance deployment assigns built-in definitions only. For the full Azure Landing Zones policy set (custom definitions such as Deny-Subnet-Without-Nsg), use the [ALZ library](https://github.com/Azure/Azure-Landing-Zones-Library) through the ALZ Bicep accelerator on top of this hierarchy; the management group IDs match its archetypes.
 
@@ -113,6 +115,7 @@ az deployment sub create --location eastus --name landing-zone \
 | `hub` | hubReferenceType | Hub reference for spoke deployments (hubReferenceType). |
 | `monitoring` | monitoringReferenceType | Monitoring reference for workload deployments (monitoringReferenceType). |
 | `firewallPolicyResourceId` | string | Resource ID of the hub firewall policy. Workloads add their own rule collection groups to it. |
+| `internalIpGroupResourceId` | string | Resource ID of the internal (spoke address space) IP Group, empty when firewall.useIpGroups is false. |
 | `vmDataCollectionRuleResourceIds` | object | Resource IDs of the baseline VM data collection rules, keyed by OS. |
 | `keyVaultResourceId` | string | Resource ID of the platform Key Vault, empty when disabled. |
 | `encryptionIdentityResourceId` | string | Resource ID of the user-assigned identity used for customer-managed key access. |

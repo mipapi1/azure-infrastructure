@@ -43,6 +43,12 @@ type firewallType = {
 
   @description('Optional. Enable DNS proxy so spokes can use the firewall as their DNS server. Defaults to true.')
   dnsProxyEnabled: bool?
+
+  @description('Optional. Create an IP Group for the internal (spoke) address space and use it as the source of the default DNS, NTP and update rules. Defaults to false (rules keep literal addresses).')
+  useIpGroups: bool?
+
+  @description('Optional. Address ranges in the internal IP Group. Defaults to 10.0.0.0/8, the range the default rules allow.')
+  internalIpGroupAddresses: string[]?
 }
 
 @export()

@@ -47,6 +47,9 @@ param firewallPolicyResourceId string = ''
 @description('Optional. Priority of the AVD rule collection group in the hub firewall policy.')
 param firewallRulePriority int = 1000
 
+@description('Optional. Create Azure Firewall IP Groups for the session host and private endpoint subnets, and use them as the source of the AVD rules instead of literal prefixes. Defaults to false.')
+param useFirewallIpGroups bool = false
+
 @description('Required. Spoke network.')
 param network avdNetworkType
 
@@ -320,6 +323,51 @@ module spoke '../modules/network/spoke-network/main.bicep' = {
   dependsOn: [resourceGroups]
 }
 
+// IP Groups for this spoke's subnets. Other workloads' rules (for example the tools spoke)
+// can reference them through the ipGroupResourceIds output.
+var ipGroupNames = {
+  sessionHosts: '${baseName}-ipg-session-hosts'
+  privateEndpoints: '${baseName}-ipg-private-endpoints'
+}
+var ipGroupAddresses = {
+  sessionHosts: [network.sessionHostSubnetPrefix]
+  privateEndpoints: [network.privateEndpointSubnetPrefix]
+}
+
+module ipGroups 'br/public:avm/res/network/ip-group:0.4.0' = [
+  for g in items(ipGroupNames): if (useFirewallIpGroups) {
+    name: '${uniqueString(deployment().name, location)}-ipg-${g.key}'
+    scope: resourceGroup(rgNames.network)
+    params: {
+      name: g.value
+      location: location
+      ipAddresses: ipGroupAddresses[g.key]
+      lock: lock
+      tags: tags
+      enableTelemetry: enableTelemetry
+    }
+    dependsOn: [resourceGroups]
+  }
+]
+
+var ipGroupResourceIds = {
+  sessionHosts: resourceId(
+    subscription().subscriptionId,
+    rgNames.network,
+    'Microsoft.Network/ipGroups',
+    ipGroupNames.sessionHosts
+  )
+  privateEndpoints: resourceId(
+    subscription().subscriptionId,
+    rgNames.network,
+    'Microsoft.Network/ipGroups',
+    ipGroupNames.privateEndpoints
+  )
+}
+var sessionHostSource = useFirewallIpGroups
+  ? { sourceIpGroups: [ipGroupResourceIds.sessionHosts] }
+  : { sourceAddresses: [network.sessionHostSubnetPrefix] }
+
 var firewallPolicySegments = split(firewallPolicyResourceId, '/')
 
 // Required AVD endpoints: https://learn.microsoft.com/azure/virtual-desktop/required-fqdn-endpoint
@@ -341,7 +389,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
             ruleType: 'NetworkRule'
             name: 'avd-service-tags'
             ipProtocols: ['TCP']
-            sourceAddresses: [network.sessionHostSubnetPrefix]
+            ...sessionHostSource
             destinationAddresses: ['WindowsVirtualDesktop', 'AzureMonitor', 'AzureActiveDirectory']
             destinationPorts: ['443']
           }
@@ -350,7 +398,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
             ruleType: 'NetworkRule'
             name: 'windows-activation'
             ipProtocols: ['TCP']
-            sourceAddresses: [network.sessionHostSubnetPrefix]
+            ...sessionHostSource
             destinationFqdns: ['azkms.${az.environment().suffixes.storage}', 'kms.${az.environment().suffixes.storage}']
             destinationPorts: ['1688']
           }
@@ -367,7 +415,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
               ruleType: 'ApplicationRule'
               name: 'avd-fqdn-tags'
               protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-              sourceAddresses: [network.sessionHostSubnetPrefix]
+              ...sessionHostSource
               fqdnTags: [
                 'WindowsVirtualDesktop'
                 'WindowsUpdate'
@@ -379,7 +427,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
               ruleType: 'ApplicationRule'
               name: 'certificate-revocation'
               protocols: [{ protocolType: 'Http', port: 80 }, { protocolType: 'Https', port: 443 }]
-              sourceAddresses: [network.sessionHostSubnetPrefix]
+              ...sessionHostSource
               targetFqdns: ['oneocsp.microsoft.com', 'www.microsoft.com', 'ctldl.windowsupdate.com']
             }
           ],
@@ -389,7 +437,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
                   ruleType: 'ApplicationRule'
                   name: 'intune'
                   protocols: [{ protocolType: 'Https', port: 443 }]
-                  sourceAddresses: [network.sessionHostSubnetPrefix]
+                  ...sessionHostSource
                   targetFqdns: ['*.manage.microsoft.com', '*.dm.microsoft.com', 'enterpriseregistration.windows.net']
                 }
               ]
@@ -398,6 +446,8 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
       }
     ]
   }
+  // Rules reference the IP Groups by ID; they must exist first.
+  dependsOn: [ipGroups]
 }
 
 // ---------------------------------------------------------------------------
@@ -814,3 +864,6 @@ output profileStorageAccountResourceId string = useAzureFiles
 
 @description('Resource ID of the spoke virtual network.')
 output virtualNetworkResourceId string = spoke.outputs.resourceId
+
+@description('Resource IDs of the firewall IP Groups (sessionHosts, privateEndpoints), empty when useFirewallIpGroups is false.')
+output ipGroupResourceIds object = useFirewallIpGroups ? ipGroupResourceIds : {}

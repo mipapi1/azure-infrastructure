@@ -81,10 +81,26 @@ def check_avd(snap: dict) -> list[str]:
             for ipc in p.get("ipConfigurations") or []:
                 if (ipc.get("properties") or {}).get("publicIPAddress"):
                     errors.append(f"{r['name']}: session host NIC has a public IP")
+    errors += check_ip_groups(resources)
     return errors
 
 
-CHECKS = {"az-avd": check_avd}
+def check_ip_groups(resources: list[dict]) -> list[str]:
+    """When the deployment creates IP Groups, its own rules must not fall back to literal prefixes."""
+    if not any(rtype(r) == "microsoft.network/ipgroups" for r in resources):
+        return []
+    errors = []
+    for r in resources:
+        if rtype(r) != "microsoft.network/firewallpolicies/rulecollectiongroups":
+            continue
+        for c in (r.get("properties") or {}).get("ruleCollections") or []:
+            for rule in c.get("rules") or []:
+                if rule.get("sourceAddresses") or not rule.get("sourceIpGroups"):
+                    errors.append(f"{r['name']}/{rule.get('name')}: IP Groups enabled but rule uses literal source addresses")
+    return errors
+
+
+CHECKS = {"az-avd": check_avd, "az-aks": lambda s: check_ip_groups(s.get("predictedResources", []))}
 
 # Deployments bicep snapshot can't evaluate offline.
 SKIP = {

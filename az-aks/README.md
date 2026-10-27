@@ -82,6 +82,8 @@ az deployment sub create --location eastus --name aks-prod \
 
 This deployment adds a rule collection group to the hub firewall policy: the `AzureKubernetesService` FQDN tag (control plane, MCR, node packages), Azure Monitor, Azure Policy, the Flux data plane and Entra sign-in. `allowedEgressFqdns` adds Git hosting and public chart and image registries; mirror images into the registry (for example with ACR cache rules) to shrink that list. The full requirement list is in [Outbound network and FQDN rules for AKS](https://learn.microsoft.com/azure/aks/outbound-rules-control-egress).
 
+`useFirewallIpGroups: true` creates IP Groups for the node and private endpoint subnets (`<cluster>-ipg-nodes`, `-ipg-private-endpoints`) and sources every rule from the node group. The `ipGroupResourceIds` output lets other workloads write rules against this spoke without copying its prefixes (D-028).
+
 Workload pods can't reach the instance metadata service or the Azure host endpoint (`gitops/infrastructure/configs/deny-node-endpoints.yaml`); they use workload identity instead.
 
 ## GitOps
@@ -132,6 +134,7 @@ Grant namespace-scoped access with Azure Kubernetes Service RBAC Writer at `<clu
 | `monitoring` | monitoringReferenceType | yes |  | Central monitoring (az-landing-zone output "monitoring"). The data collection endpoint is required for private ingestion. |
 | `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, the AKS egress rules are added to it. |
 | `firewallRulePriority` | int | no | `1100` | Priority of the AKS rule collection group in the hub firewall policy. |
+| `useFirewallIpGroups` | bool | no | `false` | Create Azure Firewall IP Groups for the node and private endpoint subnets, and use them as the source of the AKS rules instead of literal prefixes. Defaults to false. |
 | `allowedEgressFqdns` | string[] | no | `[]` | Extra FQDNs the nodes may reach over HTTPS, for example Git hosting or public chart and image registries that are not mirrored into the registry. |
 | `network` | aksNetworkType | yes |  | Spoke network. |
 | `cluster` | clusterType | yes |  | Cluster and node pools. |
@@ -152,4 +155,5 @@ Grant namespace-scoped access with Azure Kubernetes Service RBAC Writer at `<clu
 | `externalSecretsClientId` | string | Client ID of the External Secrets identity (service account annotation azure.workload.identity/client-id). |
 | `monitorWorkspaceResourceId` | string | Resource ID of the Azure Monitor workspace. |
 | `grafanaResourceId` | string | Resource ID of Managed Grafana. |
+| `ipGroupResourceIds` | object | Resource IDs of the firewall IP Groups (nodes, privateEndpoints), empty when useFirewallIpGroups is false. |
 <!-- END_PARAMS -->

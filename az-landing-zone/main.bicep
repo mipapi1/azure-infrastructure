@@ -129,10 +129,36 @@ var diagnosticSettings = [
   }
 ]
 
-var firewallRuleCollectionGroups = concat(
+var defaultRuleCollectionGroups = concat(
   loadJsonContent('config/firewall-rules/network-rules.json'),
   loadJsonContent('config/firewall-rules/application-rules.json')
 )
+
+// With IP Groups, the default rules take their source from the internal IP Group instead of
+// literal prefixes. Compile-time ID: the policy module depends on the IP Group deployment.
+var useIpGroups = firewall.?useIpGroups ?? false
+var internalIpGroupName = '${baseName}-ipg-internal'
+var internalIpGroupResourceId = resourceId(
+  subscription().subscriptionId,
+  rgNames.networking,
+  'Microsoft.Network/ipGroups',
+  internalIpGroupName
+)
+var firewallRuleCollectionGroups = useIpGroups
+  ? map(
+      defaultRuleCollectionGroups,
+      g =>
+        union(g, {
+          ruleCollections: map(
+            g.ruleCollections,
+            c =>
+              union(c, {
+                rules: map(c.rules, r => union(r, { sourceAddresses: [], sourceIpGroups: [internalIpGroupResourceId] }))
+              })
+          )
+        })
+    )
+  : defaultRuleCollectionGroups
 
 // ---------------------------------------------------------------------------
 // Resource groups
@@ -580,6 +606,20 @@ module hubVnet 'br/public:avm/res/network/virtual-network:0.10.2' = {
   dependsOn: [logAnalytics]
 }
 
+module internalIpGroup 'br/public:avm/res/network/ip-group:0.4.0' = if (useIpGroups) {
+  name: '${uniqueString(deployment().name, location)}-ipg-internal'
+  scope: resourceGroup(rgNames.networking)
+  params: {
+    name: internalIpGroupName
+    location: location
+    ipAddresses: firewall.?internalIpGroupAddresses ?? ['10.0.0.0/8']
+    lock: lock
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [resourceGroups]
+}
+
 module firewallPolicy 'br/public:avm/res/network/firewall-policy:0.3.6' = {
   name: '${uniqueString(deployment().name, location)}-afwp'
   scope: resourceGroup(rgNames.networking)
@@ -600,7 +640,8 @@ module firewallPolicy 'br/public:avm/res/network/firewall-policy:0.3.6' = {
     tags: tags
     enableTelemetry: enableTelemetry
   }
-  dependsOn: [resourceGroups, logAnalytics]
+  // The IP Group must exist before rules reference it.
+  dependsOn: [resourceGroups, logAnalytics, internalIpGroup]
 }
 
 module azureFirewall 'br/public:avm/res/network/azure-firewall:0.11.1' = {
@@ -878,6 +919,9 @@ output monitoring monitoringReferenceType = {
 
 @description('Resource ID of the hub firewall policy. Workloads add their own rule collection groups to it.')
 output firewallPolicyResourceId string = firewallPolicy.outputs.resourceId
+
+@description('Resource ID of the internal (spoke address space) IP Group, empty when firewall.useIpGroups is false.')
+output internalIpGroupResourceId string = useIpGroups ? internalIpGroup!.outputs.resourceId : ''
 
 @description('Resource IDs of the baseline VM data collection rules, keyed by OS.')
 output vmDataCollectionRuleResourceIds object = {

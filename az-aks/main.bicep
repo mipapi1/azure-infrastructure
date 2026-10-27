@@ -35,6 +35,9 @@ param firewallPolicyResourceId string = ''
 @description('Optional. Priority of the AKS rule collection group in the hub firewall policy.')
 param firewallRulePriority int = 1100
 
+@description('Optional. Create Azure Firewall IP Groups for the node and private endpoint subnets, and use them as the source of the AKS rules instead of literal prefixes. Defaults to false.')
+param useFirewallIpGroups bool = false
+
 @description('Optional. Extra FQDNs the nodes may reach over HTTPS, for example Git hosting or public chart and image registries that are not mirrored into the registry.')
 param allowedEgressFqdns string[] = []
 
@@ -292,6 +295,45 @@ module dnsZoneAccess 'br/public:avm/ptn/authorization/resource-role-assignment:0
   }
 }
 
+// IP Groups for this spoke's subnets, also usable by other workloads' rules (ipGroupResourceIds output).
+var ipGroupNames = {
+  nodes: '${baseName}-ipg-nodes'
+  privateEndpoints: '${baseName}-ipg-private-endpoints'
+}
+var ipGroupAddresses = {
+  nodes: [network.nodeSubnetPrefix]
+  privateEndpoints: [network.privateEndpointSubnetPrefix]
+}
+var ipGroupResourceIds = {
+  nodes: resourceId(subscription().subscriptionId, rgNames.network, 'Microsoft.Network/ipGroups', ipGroupNames.nodes)
+  privateEndpoints: resourceId(
+    subscription().subscriptionId,
+    rgNames.network,
+    'Microsoft.Network/ipGroups',
+    ipGroupNames.privateEndpoints
+  )
+}
+
+module ipGroups 'br/public:avm/res/network/ip-group:0.4.0' = [
+  for g in items(ipGroupNames): if (useFirewallIpGroups) {
+    name: '${uniqueString(deployment().name, location)}-ipg-${g.key}'
+    scope: resourceGroup(rgNames.network)
+    params: {
+      name: g.value
+      location: location
+      ipAddresses: ipGroupAddresses[g.key]
+      lock: lock
+      tags: tags
+      enableTelemetry: enableTelemetry
+    }
+    dependsOn: [resourceGroups]
+  }
+]
+
+var nodeSource = useFirewallIpGroups
+  ? { sourceIpGroups: [ipGroupResourceIds.nodes] }
+  : { sourceAddresses: [network.nodeSubnetPrefix] }
+
 var firewallPolicySegments = split(firewallPolicyResourceId, '/')
 var loginHost = replace(replace(az.environment().authentication.loginEndpoint, 'https://', ''), '/', '')
 
@@ -314,7 +356,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
             ruleType: 'NetworkRule'
             name: 'azure-monitor'
             ipProtocols: ['TCP']
-            sourceAddresses: [network.nodeSubnetPrefix]
+            ...nodeSource
             destinationAddresses: ['AzureMonitor']
             destinationPorts: ['443']
           }
@@ -331,14 +373,14 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
               ruleType: 'ApplicationRule'
               name: 'aks-fqdn-tag'
               protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-              sourceAddresses: [network.nodeSubnetPrefix]
+              ...nodeSource
               fqdnTags: ['AzureKubernetesService']
             }
             {
               ruleType: 'ApplicationRule'
               name: 'aks-addons'
               protocols: [{ protocolType: 'Https', port: 443 }]
-              sourceAddresses: [network.nodeSubnetPrefix]
+              ...nodeSource
               targetFqdns: [
                 // Azure Policy, Defender, Flux and Entra token endpoints.
                 'data.policy.${az.environment().suffixes.storage}'
@@ -358,7 +400,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
                   ruleType: 'ApplicationRule'
                   name: 'workload-egress'
                   protocols: [{ protocolType: 'Https', port: 443 }]
-                  sourceAddresses: [network.nodeSubnetPrefix]
+                  ...nodeSource
                   targetFqdns: allowedEgressFqdns
                 }
               ]
@@ -366,6 +408,8 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
       }
     ]
   }
+  // Rules reference the IP Groups by ID; they must exist first.
+  dependsOn: [ipGroups]
 }
 
 // ---------------------------------------------------------------------------
@@ -731,3 +775,6 @@ output monitorWorkspaceResourceId string = clusterMonitoring.outputs.monitorWork
 
 @description('Resource ID of Managed Grafana.')
 output grafanaResourceId string = clusterMonitoring.outputs.grafanaResourceId
+
+@description('Resource IDs of the firewall IP Groups (nodes, privateEndpoints), empty when useFirewallIpGroups is false.')
+output ipGroupResourceIds object = useFirewallIpGroups ? ipGroupResourceIds : {}

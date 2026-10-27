@@ -100,6 +100,8 @@ type firewallEgress = {
   ruleCollectionGroupName: string?
   ruleCollectionGroupPriority: int?
   disableBgpRoutePropagation: bool?
+  @description('Create Azure Firewall IP Groups for the build and container instance subnets and use them as rule sources. Default: false.')
+  useIpGroups: bool?
 }
 
 @description('No firewall: outbound through a NAT gateway with its own public IP.')
@@ -226,6 +228,31 @@ module vnet 'modules/network.bicep' = {
   dependsOn: [rg]
 }
 
+var useIpGroups = !empty(firewallPolicyId) && network.egress.mode == 'firewall' && (network.egress.?useIpGroups ?? false)
+var ipGroupNames = {
+  build: '${network.name}-ipg-build'
+  containerInstance: '${network.name}-ipg-container-instance'
+}
+var ipGroupAddresses = {
+  build: [network.buildSubnet.addressPrefix]
+  containerInstance: [network.containerInstanceSubnet.addressPrefix]
+}
+
+module ipGroups 'br/public:avm/res/network/ip-group:0.4.0' = [
+  for g in items(ipGroupNames): if (useIpGroups) {
+    name: 'deploy-${rgName}-ipg-${g.key}'
+    scope: resourceGroup(rgName)
+    params: {
+      name: g.value
+      location: location
+      ipAddresses: ipGroupAddresses[g.key]
+      lock: enableLock ? { kind: lockKind } : null
+      tags: tags
+    }
+    dependsOn: [rg]
+  }
+]
+
 module firewallRules 'modules/firewall-rules.bicep' = if (!empty(firewallPolicyId)) {
   name: 'deploy-${rgName}-firewall-rules'
   scope: resourceGroup(split(firewallPolicyId, '/')[2], split(firewallPolicyId, '/')[4])
@@ -237,8 +264,16 @@ module firewallRules 'modules/firewall-rules.bicep' = if (!empty(firewallPolicyI
     priority: network.egress.mode == 'firewall' ? (network.egress.?ruleCollectionGroupPriority ?? 500) : 500
     buildSubnetPrefix: network.buildSubnet.addressPrefix
     containerInstanceSubnetPrefix: network.containerInstanceSubnet.addressPrefix
+    buildIpGroupResourceId: useIpGroups
+      ? resourceId(subscription().subscriptionId, rgName, 'Microsoft.Network/ipGroups', ipGroupNames.build)
+      : ''
+    containerInstanceIpGroupResourceId: useIpGroups
+      ? resourceId(subscription().subscriptionId, rgName, 'Microsoft.Network/ipGroups', ipGroupNames.containerInstance)
+      : ''
     rules: loadJsonContent('config/firewall-rules.json')
   }
+  // Rules reference the IP Groups by ID; they must exist first.
+  dependsOn: [ipGroups]
 }
 
 module st 'modules/storage.bicep' = {

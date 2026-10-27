@@ -174,6 +174,7 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 | `baselineDataCollectionRuleResourceId` | string | no | `""` | Baseline Windows VM data collection rule (az-landing-zone output vmDataCollectionRuleResourceIds.windows). |
 | `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, the AVD egress rules are added to it. |
 | `firewallRulePriority` | int | no | `1000` | Priority of the AVD rule collection group in the hub firewall policy. |
+| `useFirewallIpGroups` | bool | no | `false` | Create Azure Firewall IP Groups for the session host and private endpoint subnets, and use them as the source of the AVD rules instead of literal prefixes. Defaults to false. |
 | `network` | avdNetworkType | yes |  | Spoke network. |
 | `hostPool` | hostPoolType | no | `{}` | Host pool settings. |
 | `sessionHosts` | sessionHostsType | yes |  | Session hosts. |
@@ -194,4 +195,5 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 | `sessionHostNames` | string[] | Session host names. |
 | `profileStorageAccountResourceId` | string | Resource ID of the FSLogix storage account (file share or Cloud Cache blob account), empty when disabled. |
 | `virtualNetworkResourceId` | string | Resource ID of the spoke virtual network. |
+| `ipGroupResourceIds` | object | Resource IDs of the firewall IP Groups (sessionHosts, privateEndpoints), empty when useFirewallIpGroups is false. |
 <!-- END_PARAMS -->
