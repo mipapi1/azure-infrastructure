@@ -8,9 +8,11 @@ import { compactName, regionShortNames } from '../modules/shared/naming.bicep'
 import {
   applicationGroupType
   avdNetworkType
+  complianceType
   fslogixType
   hostPoolType
   identityType
+  localAdminType
   scalingScheduleType
   scalingType
   sessionHostsType
@@ -84,6 +86,12 @@ param workspaceFriendlyName string = 'Virtual Desktop'
 @description('Optional. Scaling plan settings.')
 param scaling scalingType = {}
 
+@description('Optional. Local administrator settings: a Windows LAPS-managed break-glass account.')
+param localAdmin localAdminType = {}
+
+@description('Optional. Compliance evidence and AppLocker and Defender event collection.')
+param compliance complianceType = {}
+
 @description('Optional. Email-free alerting: alerts use the landing zone action group from monitoring.actionGroupResourceId.')
 param enableAlerts bool = true
 
@@ -108,6 +116,12 @@ var configurationErrors = filter(
       : ''
     isCloudOnly && useAzureFiles && contains(['AADDS', 'AD'], fslogix.?directoryService ?? 'AADKERB')
       ? 'Cloud-only identities need fslogix.directoryService AADKERB; AADDS and AD only know domain identities.'
+      : ''
+    applyDeferredStigs && empty(sessionHosts.?galleryImageResourceId ?? '')
+      ? 'sessionHosts.applyDeferredStigs needs an az-image-builder image (sessionHosts.galleryImageResourceId); marketplace images have no deferred STIG package.'
+      : ''
+    complianceEvidence && empty(monitoring.?dataCollectionEndpointResourceId ?? '')
+      ? 'compliance.evidence needs monitoring.dataCollectionEndpointResourceId: Azure Monitor Agent only collects log files through a data collection endpoint.'
       : ''
   ],
   e => !empty(e)
@@ -144,6 +158,12 @@ var cloudOnlyFilesUnsupported = isCloudOnly && useAzureFiles && contains(
   az.environment().name
 )
 var scalingEnabled = isPooled && (scaling.?enabled ?? true)
+var pauseScaling = scalingEnabled && (scaling.?pauseDuringDeployment ?? true)
+var applyDeferredStigs = sessionHosts.?applyDeferredStigs ?? !empty(sessionHosts.?galleryImageResourceId ?? '')
+var guestAttestation = sessionHosts.?guestAttestation ?? true
+var complianceEvidence = compliance.?evidence ?? false
+var securityEvents = compliance.?securityEvents ?? false
+var breakGlass = localAdmin.?breakGlass ?? { enabled: false }
 var exclusionTag = scaling.?exclusionTag ?? 'scaling-exclude'
 var adminGroups = identity.?adminGroupObjectIds ?? []
 
@@ -390,7 +410,10 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
             name: 'avd-service-tags'
             ipProtocols: ['TCP']
             ...sessionHostSource
-            destinationAddresses: ['WindowsVirtualDesktop', 'AzureMonitor', 'AzureActiveDirectory']
+            destinationAddresses: concat(
+              ['WindowsVirtualDesktop', 'AzureMonitor', 'AzureActiveDirectory'],
+              guestAttestation ? ['AzureAttestation'] : []
+            )
             destinationPorts: ['443']
           }
           {
@@ -554,6 +577,32 @@ module avdWorkspace 'br/public:avm/res/desktop-virtualization/workspace:0.9.2' =
   }
 }
 
+var scalingSchedules = [
+  for (s, i) in (scaling.?schedules ?? defaultSchedules): {
+    name: 'schedule-${i}'
+    daysOfWeek: s.daysOfWeek
+    rampUpStartTime: time(s.rampUpStart)
+    rampUpLoadBalancingAlgorithm: 'BreadthFirst'
+    rampUpMinimumHostsPct: s.?rampUpMinimumHostsPct ?? 20
+    rampUpCapacityThresholdPct: s.?capacityThresholdPct ?? 60
+    peakStartTime: time(s.peakStart)
+    peakLoadBalancingAlgorithm: hostPool.?loadBalancerType ?? 'BreadthFirst'
+    rampDownStartTime: time(s.rampDownStart)
+    rampDownLoadBalancingAlgorithm: 'DepthFirst'
+    rampDownMinimumHostsPct: s.?rampDownMinimumHostsPct ?? 10
+    rampDownCapacityThresholdPct: 90
+    rampDownForceLogoffUsers: false
+    rampDownStopHostsWhen: 'ZeroActiveSessions'
+    rampDownWaitTimeMinutes: 30
+    rampDownNotificationMessage: 'This session host is being shut down. Save your work; you will be moved to another host when you sign in again.'
+    offPeakStartTime: time(s.offPeakStart)
+    offPeakLoadBalancingAlgorithm: 'DepthFirst'
+  }
+]
+
+// The plan is created (or updated) with the host pool reference turned off while session hosts
+// deploy, so it can't stop or drain a host that is still being configured, and turned back on
+// by scalingPlanResume once every host is done.
 module scalingPlan 'br/public:avm/res/desktop-virtualization/scaling-plan:0.5.0' = if (scalingEnabled) {
   name: '${uniqueString(deployment().name, location)}-scaling'
   scope: resourceGroup(rgNames.service)
@@ -563,33 +612,12 @@ module scalingPlan 'br/public:avm/res/desktop-virtualization/scaling-plan:0.5.0'
     hostPoolType: 'Pooled'
     timeZone: scaling.?timeZone ?? 'UTC'
     exclusionTag: exclusionTag
-    hostPoolReferences: [{ hostPoolResourceId: hostPoolResourceId, scalingPlanEnabled: true }]
-    schedules: [
-      for (s, i) in (scaling.?schedules ?? defaultSchedules): {
-        name: 'schedule-${i}'
-        daysOfWeek: s.daysOfWeek
-        rampUpStartTime: time(s.rampUpStart)
-        rampUpLoadBalancingAlgorithm: 'BreadthFirst'
-        rampUpMinimumHostsPct: s.?rampUpMinimumHostsPct ?? 20
-        rampUpCapacityThresholdPct: s.?capacityThresholdPct ?? 60
-        peakStartTime: time(s.peakStart)
-        peakLoadBalancingAlgorithm: hostPool.?loadBalancerType ?? 'BreadthFirst'
-        rampDownStartTime: time(s.rampDownStart)
-        rampDownLoadBalancingAlgorithm: 'DepthFirst'
-        rampDownMinimumHostsPct: s.?rampDownMinimumHostsPct ?? 10
-        rampDownCapacityThresholdPct: 90
-        rampDownForceLogoffUsers: false
-        rampDownStopHostsWhen: 'ZeroActiveSessions'
-        rampDownWaitTimeMinutes: 30
-        rampDownNotificationMessage: 'This session host is being shut down. Save your work; you will be moved to another host when you sign in again.'
-        offPeakStartTime: time(s.offPeakStart)
-        offPeakLoadBalancingAlgorithm: 'DepthFirst'
-      }
-    ]
+    schedules: scalingSchedules
     diagnosticSettings: diagnosticSettings
     lock: lock
     tags: tags
     enableTelemetry: enableTelemetry
+    hostPoolReferences: [{ hostPoolResourceId: hostPoolResourceId, scalingPlanEnabled: !pauseScaling }]
   }
   dependsOn: [avdHostPool]
 }
@@ -781,6 +809,8 @@ module avdMonitoring '../modules/avd/monitoring/main.bicep' = {
     profileShareQuotaGiB: shareQuotaGiB
     actionGroupResourceId: enableAlerts ? (monitoring.?actionGroupResourceId ?? '') : ''
     baseSeverity: isProd ? 1 : 3
+    complianceEvidence: complianceEvidence
+    securityEvents: securityEvents
     tags: tags
     enableTelemetry: enableTelemetry
   }
@@ -820,7 +850,8 @@ module avdSessionHosts '../modules/avd/session-hosts/main.bicep' = {
     hostPoolResourceId: hostPoolResourceId
     dataCollectionRuleResourceIds: concat(
       [avdMonitoring.outputs.avdInsightsDataCollectionRuleResourceId],
-      empty(baselineDataCollectionRuleResourceId) ? [] : [baselineDataCollectionRuleResourceId]
+      empty(baselineDataCollectionRuleResourceId) ? [] : [baselineDataCollectionRuleResourceId],
+      complianceEvidence || securityEvents ? [avdMonitoring.outputs.securityDataCollectionRuleResourceId] : []
     )
     fslogix: {
       enabled: fslogixEnabled
@@ -836,12 +867,52 @@ module avdSessionHosts '../modules/avd/session-hosts/main.bicep' = {
     }
     entraKerberos: useAzureFiles && directoryService == 'AADKERB'
     cloudOnlyIdentities: isCloudOnly
+    guestAttestation: guestAttestation
+    applyDeferredStigs: applyDeferredStigs
+    disableLocalAdministrators: sessionHosts.?disableLocalAdministrators ?? true
+    breakGlass: {
+      enabled: breakGlass.enabled
+      configurationMethod: breakGlass.?configurationMethod ?? ((identity.?intuneEnrollment ?? false)
+        ? 'Intune'
+        : 'RunCommand')
+      accountName: breakGlass.?accountName
+      backupDirectory: breakGlass.?backupDirectory ?? (isEntraJoined ? 'EntraID' : 'ActiveDirectory')
+      passwordAgeDays: breakGlass.?passwordAgeDays
+      passwordLength: breakGlass.?passwordLength
+      postAuthenticationResetDelayHours: breakGlass.?postAuthenticationResetDelayHours
+    }
+    complianceEvidence: {
+      enabled: complianceEvidence
+      dailyAt: compliance.?dailyAt
+      scapCommand: compliance.?scapCommand
+      scapArguments: compliance.?scapArguments
+      scapResultsPath: compliance.?scapResultsPath
+    }
     diskEncryptionSetResourceId: sessionHosts.?diskEncryptionSetResourceId
     lock: lock
     tags: union(tags, { 'avd-host-pool': hostPoolName })
     enableTelemetry: enableTelemetry
   }
-  dependsOn: [avdHostPool, profileStorage, profileBlobStorage, firewallRules]
+  dependsOn: [avdHostPool, profileStorage, profileBlobStorage, firewallRules, scalingPlan]
+}
+
+module scalingPlanResume 'br/public:avm/res/desktop-virtualization/scaling-plan:0.5.0' = if (pauseScaling) {
+  name: '${uniqueString(deployment().name, location)}-scaling-resume'
+  scope: resourceGroup(rgNames.service)
+  params: {
+    name: '${baseName}-vdscaling'
+    location: location
+    hostPoolType: 'Pooled'
+    timeZone: scaling.?timeZone ?? 'UTC'
+    exclusionTag: exclusionTag
+    schedules: scalingSchedules
+    diagnosticSettings: diagnosticSettings
+    lock: lock
+    tags: tags
+    enableTelemetry: enableTelemetry
+    hostPoolReferences: [{ hostPoolResourceId: hostPoolResourceId, scalingPlanEnabled: true }]
+  }
+  dependsOn: [scalingPlan, avdSessionHosts]
 }
 
 // ---------------------------------------------------------------------------
@@ -867,3 +938,6 @@ output virtualNetworkResourceId string = spoke.outputs.resourceId
 
 @description('Resource IDs of the firewall IP Groups (sessionHosts, privateEndpoints), empty when useFirewallIpGroups is false.')
 output ipGroupResourceIds object = useFirewallIpGroups ? ipGroupResourceIds : {}
+
+@description('Resource ID of the session host compliance workbook, empty when compliance.evidence is false.')
+output complianceWorkbookResourceId string = avdMonitoring.outputs.complianceWorkbookResourceId

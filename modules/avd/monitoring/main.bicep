@@ -1,5 +1,5 @@
 metadata name = 'AVD monitoring'
-metadata description = 'AVD Insights data collection rule and alert rules for one host pool: no available hosts, unhealthy hosts, high session count, FSLogix errors, and profile storage latency and capacity.'
+metadata description = 'AVD Insights data collection rule and alert rules for one host pool: no available hosts, unhealthy hosts, high session count, FSLogix errors, and profile storage latency and capacity. Optionally collects host compliance evidence and AppLocker and Defender events, with a compliance workbook.'
 
 @description('Required. Name prefix for the rules.')
 param namePrefix string
@@ -38,6 +38,12 @@ param actionGroupResourceId string = ''
 @minValue(0)
 @maxValue(4)
 param baseSeverity int = 1
+
+@description('Optional. Collect the daily compliance evidence the session hosts write (custom table AvdComplianceEvidence_CL) and deploy a compliance workbook. Needs dataCollectionEndpointResourceId.')
+param complianceEvidence bool = false
+
+@description('Optional. Forward AppLocker and Microsoft Defender Antivirus events (warnings and errors, plus Defender configuration changes) to the Event table.')
+param securityEvents bool = false
 
 @description('Optional. Tags applied to every resource.')
 param tags resourceInput<'Microsoft.Insights/dataCollectionRules@2024-03-11'>.tags?
@@ -118,6 +124,121 @@ module avdInsightsRule 'br/public:avm/res/insights/data-collection-rule:0.11.0' 
     tags: tags
     enableTelemetry: enableTelemetry
   }
+}
+
+// ---------------------------------------------------------------------------
+// Compliance evidence and security events (optional)
+// ---------------------------------------------------------------------------
+
+var workspaceSegments = split(logAnalyticsWorkspaceResourceId, '/')
+var evidenceTableName = 'AvdComplianceEvidence_CL'
+var evidenceColumns = [
+  { name: 'TimeGenerated', type: 'dateTime' }
+  { name: 'Computer', type: 'string' }
+  { name: 'FilePath', type: 'string' }
+  { name: 'RunId', type: 'string' }
+  { name: 'Source', type: 'string' }
+  { name: 'RuleId', type: 'string' }
+  { name: 'Item', type: 'string' }
+  { name: 'Expected', type: 'string' }
+  { name: 'Actual', type: 'string' }
+  { name: 'Status', type: 'string' }
+]
+
+// The table must exist before a rule can send to it. Shared by every host pool on the workspace.
+module evidenceTable 'br/public:avm/res/operational-insights/workspace/table:0.1.0' = if (complianceEvidence) {
+  name: '${uniqueString(deployment().name, location)}-evidence-table'
+  scope: resourceGroup(workspaceSegments[2], workspaceSegments[4])
+  params: {
+    name: evidenceTableName
+    workspaceName: last(workspaceSegments)
+    plan: 'Analytics'
+    schema: {
+      name: evidenceTableName
+      columns: evidenceColumns
+    }
+    enableTelemetry: enableTelemetry
+  }
+}
+
+var securityEventQueries = [
+  // AppLocker: warnings are audit-mode hits, errors are blocks (event IDs 8003/8004, 8006/8007, 8021/8022, 8024/8025).
+  'Microsoft-Windows-AppLocker/EXE and DLL!*[System[(Level=1 or Level=2 or Level=3)]]'
+  'Microsoft-Windows-AppLocker/MSI and Script!*[System[(Level=1 or Level=2 or Level=3)]]'
+  'Microsoft-Windows-AppLocker/Packaged app-Deployment!*[System[(Level=1 or Level=2 or Level=3)]]'
+  'Microsoft-Windows-AppLocker/Packaged app-Execution!*[System[(Level=1 or Level=2 or Level=3)]]'
+  // Defender Antivirus: detections and failures, plus 5007 (configuration changed).
+  'Microsoft-Windows-Windows Defender/Operational!*[System[(Level=1 or Level=2 or Level=3 or EventID=5007)]]'
+]
+
+module securityRule 'br/public:avm/res/insights/data-collection-rule:0.11.0' = if (complianceEvidence || securityEvents) {
+  name: '${uniqueString(deployment().name, location)}-dcr-security'
+  params: {
+    name: '${namePrefix}-dcr-security'
+    location: location
+    dataCollectionRuleProperties: {
+      kind: 'Windows'
+      description: 'Session host compliance evidence and AppLocker and Defender events.'
+      dataCollectionEndpointResourceId: dataCollectionEndpointResourceId
+      // Stream declarations spell the type 'datetime'; table schemas spell it 'dateTime'.
+      streamDeclarations: complianceEvidence
+        ? {
+            'Custom-AvdComplianceEvidence': {
+              columns: map(evidenceColumns, c => { name: c.name, type: c.type == 'dateTime' ? 'datetime' : c.type })
+            }
+          }
+        : null
+      dataSources: {
+        logFiles: complianceEvidence
+          ? [
+              {
+                name: 'compliance-evidence'
+                streams: ['Custom-AvdComplianceEvidence']
+                filePatterns: ['C:\\ProgramData\\STIG\\evidence\\compliance-*.json']
+                format: 'json'
+              }
+            ]
+          : []
+        windowsEventLogs: securityEvents
+          ? [{ name: 'security-events', streams: ['Microsoft-Event'], xPathQueries: securityEventQueries }]
+          : []
+      }
+      destinations: {
+        logAnalytics: [{ name: 'law', workspaceResourceId: logAnalyticsWorkspaceResourceId }]
+      }
+      dataFlows: concat(
+        complianceEvidence
+          ? [
+              {
+                streams: ['Custom-AvdComplianceEvidence']
+                destinations: ['law']
+                transformKql: 'source'
+                outputStream: 'Custom-${evidenceTableName}'
+              }
+            ]
+          : [],
+        securityEvents ? [{ streams: ['Microsoft-Event'], destinations: ['law'] }] : []
+      )
+    }
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [evidenceTable]
+}
+
+// No AVM covers workbooks (D-029).
+resource complianceWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (complianceEvidence) {
+  name: guid(resourceGroup().id, namePrefix, 'compliance-workbook')
+  location: location
+  kind: 'shared'
+  tags: tags
+  properties: {
+    displayName: '${namePrefix} session host compliance'
+    category: 'workbook'
+    sourceId: logAnalyticsWorkspaceResourceId
+    serializedData: replace(loadTextContent('workbooks/compliance.workbook.json'), '__HOST_PREFIX__', sessionHostPrefix)
+  }
+  dependsOn: [evidenceTable]
 }
 
 var queryAlerts = [
@@ -259,3 +380,11 @@ module storageCapacityAlert 'br/public:avm/res/insights/metric-alert:0.4.1' = if
 
 @description('Resource ID of the AVD Insights data collection rule. Associate it with every session host.')
 output avdInsightsDataCollectionRuleResourceId string = avdInsightsRule.outputs.resourceId
+
+@description('Resource ID of the compliance evidence and security events rule, empty when neither is enabled. Associate it with every session host.')
+output securityDataCollectionRuleResourceId string = complianceEvidence || securityEvents
+  ? securityRule!.outputs.resourceId
+  : ''
+
+@description('Resource ID of the compliance workbook, empty when complianceEvidence is false.')
+output complianceWorkbookResourceId string = complianceEvidence ? complianceWorkbook.id : ''

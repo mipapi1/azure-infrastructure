@@ -85,6 +85,15 @@ type sessionHostsType = {
 
   @description('Optional. Resource ID of a disk encryption set for customer-managed keys.')
   diskEncryptionSetResourceId: string?
+
+  @description('Optional. Run the deferred STIG step baked into az-image-builder images (Apply-DeferredStigs.ps1 -Phase Deploy) after registration and FSLogix. Defaults to true when galleryImageResourceId is set; set false for gallery images built without the STIG package.')
+  applyDeferredStigs: bool?
+
+  @description('Optional. With applyDeferredStigs, disable every local administrator (V-253432). localAdmin.breakGlass keeps one LAPS-managed account enabled. Defaults to true.')
+  disableLocalAdministrators: bool?
+
+  @description('Optional. Install the Guest Attestation extension (boot integrity monitoring). Adds a firewall rule to the AzureAttestation service tag. Defaults to true.')
+  guestAttestation: bool?
 }
 
 @export()
@@ -148,6 +157,63 @@ type fslogixType = {
 }
 
 @export()
+@description('Local administrator settings.')
+type localAdminType = {
+  @description('Optional. One Windows LAPS-managed break-glass administrator per host. Off by default.')
+  breakGlass: {
+    @description('Required. Configure the break-glass account.')
+    enabled: bool
+
+    @description('Optional. RunCommand writes the Windows LAPS Local Configuration registry root during deployment (for hosts without Intune or Group Policy LAPS). Intune: deploy an Intune LAPS policy instead (see README); nothing is written to the hosts. Defaults to Intune when identity.intuneEnrollment is true, otherwise RunCommand.')
+    configurationMethod: ('RunCommand' | 'Intune')?
+
+    @description('Optional. Managed account name, 20 characters or fewer. Defaults to WLapsAdmin.')
+    @maxLength(20)
+    accountName: string?
+
+    @description('Optional. EntraID (Entra-joined or hybrid-joined hosts) or ActiveDirectory (AD DS-joined hosts). Defaults to EntraID for EntraJoined and ActiveDirectory for DomainJoined.')
+    backupDirectory: ('EntraID' | 'ActiveDirectory')?
+
+    @description('Optional. Maximum password age in days, 7-365. Defaults to 30.')
+    @minValue(7)
+    @maxValue(365)
+    passwordAgeDays: int?
+
+    @description('Optional. Password length, 14-64. Defaults to 20.')
+    @minValue(14)
+    @maxValue(64)
+    passwordLength: int?
+
+    @description('Optional. Hours after the account signs in before LAPS resets the password and signs it out, 1-24. Defaults to 8.')
+    @minValue(1)
+    @maxValue(24)
+    postAuthenticationResetDelayHours: int?
+  }?
+}
+
+@export()
+@description('Compliance evidence and security event collection.')
+type complianceType = {
+  @description('Optional. Daily evidence task on each host (deferred STIG step, registry and security template settings, AppLocker, Defender, optional SCAP) sent to the AvdComplianceEvidence_CL table, with a workbook. Needs monitoring.dataCollectionEndpointResourceId. Defaults to false.')
+  evidence: bool?
+
+  @description('Optional. Forward AppLocker and Microsoft Defender Antivirus events to the Event table. Defaults to false.')
+  securityEvents: bool?
+
+  @description('Optional. Local time of the daily evidence run, HH:mm. Defaults to 03:00.')
+  dailyAt: string?
+
+  @description('Optional. SCAP scanner executable on the image, run before the evidence is written. Bring your own scanner; none is installed by this repo.')
+  scapCommand: string?
+
+  @description('Optional. Arguments for the SCAP scanner.')
+  scapArguments: string?
+
+  @description('Optional. Folder the SCAP scanner writes XCCDF results to; the newest XML file is parsed.')
+  scapResultsPath: string?
+}
+
+@export()
 @description('Application group.')
 type applicationGroupType = {
   @description('Required. Short name, used as the name suffix.')
@@ -208,4 +274,7 @@ type scalingType = {
 
   @description('Optional. Schedules. Defaults to a weekday business-hours schedule and a weekend schedule.')
   schedules: scalingScheduleType[]?
+
+  @description('Optional. Turn the scaling plan off for the host pool while session hosts deploy and back on afterwards, so it does not stop or drain hosts mid-deployment. Defaults to true.')
+  pauseDuringDeployment: bool?
 }

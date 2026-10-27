@@ -1,0 +1,165 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Session host compliance\nLatest daily evidence from each host (`Write-ComplianceEvidence.ps1`): deferred STIG step, registry and security template settings, AppLocker enforcement, Defender status and optional SCAP results. This is configuration evidence for review; it is not an authorization decision."
+      },
+      "name": "intro"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "time",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ]
+            },
+            "label": "Time range"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AvdComplianceEvidence_CL\n| where Computer startswith \"__HOST_PREFIX__\"\n| summarize arg_max(TimeGenerated, *) by Computer, Source, Item, RuleId\n| summarize Checks = count() by Status",
+        "size": 4,
+        "title": "Checks by status",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "Status"
+          },
+          "leftContent": {
+            "columnMatch": "Checks",
+            "formatter": 12
+          },
+          "showBorder": true
+        }
+      },
+      "name": "checks-by-status"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AvdComplianceEvidence_CL\n| where Computer startswith \"__HOST_PREFIX__\"\n| summarize arg_max(TimeGenerated, *) by Computer, Source, Item, RuleId\n| summarize Failing = countif(Status in (\"Fail\", \"Error\")), Checks = count(), LastRun = max(TimeGenerated) by Computer\n| where Failing > 0\n| order by Failing desc",
+        "size": 0,
+        "title": "Hosts not fully passing",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "hosts-not-fully-passing"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "AvdComplianceEvidence_CL\n| where Computer startswith \"__HOST_PREFIX__\"\n| summarize arg_max(TimeGenerated, *) by Computer, Source, Item, RuleId\n| where Status in (\"Fail\", \"Error\")\n| project Computer, Source, RuleId, Item, Expected, Actual, Status, TimeGenerated\n| order by Computer asc, Source asc",
+        "size": 0,
+        "title": "Failing checks",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "failing-checks"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let reporting = AvdComplianceEvidence_CL | where TimeGenerated > ago(2d) | distinct Computer;\nHeartbeat\n| where TimeGenerated > ago(1d) and Computer startswith \"__HOST_PREFIX__\"\n| distinct Computer\n| where Computer !in (reporting)",
+        "size": 0,
+        "title": "Hosts without evidence in 2 days",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "hosts-without-evidence-in-2-days"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Event\n| where Computer startswith \"__HOST_PREFIX__\" and Source == \"Microsoft-Windows-AppLocker\"\n| summarize Events = count() by Computer, EventID, EventLevelName\n| order by Events desc",
+        "size": 0,
+        "title": "AppLocker blocks and audit hits",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "applocker-blocks-and-audit-hits"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Event\n| where Computer startswith \"__HOST_PREFIX__\" and Source == \"Microsoft-Windows-Windows Defender\"\n| project TimeGenerated, Computer, EventID, EventLevelName, RenderedDescription\n| order by TimeGenerated desc",
+        "size": 0,
+        "title": "Defender detections and changes",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "defender-detections-and-changes"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

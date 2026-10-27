@@ -122,11 +122,14 @@ The host pool module asks for a new registration token on every deployment (`tok
 
 Pooled pools get a scaling plan with weekday and weekend schedules (ramp-up 07:00, peak 09:00, ramp-down 17:00, off-peak 20:00 on weekdays, in `scaling.timeZone`). Ramp-down waits for zero active sessions and never forces log-off. Tag a host with `scaling-exclude` to keep the plan away from it during maintenance.
 
+While session hosts deploy, the plan's host pool reference is turned off (`scalingPlanEnabled: false`) and a second deployment of the same plan turns it back on once every host has finished its Run Commands, so the plan can't stop or drain a host that is still being configured. Set `scaling.pauseDuringDeployment: false` to keep the plan on throughout. If a deployment fails between the two steps, the plan stays off until the next successful deployment.
+
 ## Monitoring
 
 - Diagnostic settings (all logs) on the host pool, application groups, workspace, scaling plan, network and profile storage, all to the central workspace.
 - Data collection rule `microsoft-avdi-<pool>` with the counters and events AVD Insights needs; associated with every host together with the landing zone's baseline Windows rule. Open **Azure Virtual Desktop > Insights** and pick the host pool to use the workbook.
 - Alerts: no available hosts (Sev 1 in prod), unhealthy host, host near the session limit, FSLogix errors, profile storage latency above 50 ms, profile share above 80% of quota. The storage latency and quota alerts apply to the Azure Files store; Cloud Cache on blob storage has no quota, and FSLogix errors are still alerted from the hosts.
+- Optional (`compliance`): daily compliance evidence in `AvdComplianceEvidence_CL` with a workbook, and AppLocker and Defender Antivirus events in `Event`, through a second rule `<pool>-dcr-security`. See [Host hardening](#host-hardening).
 
 ## Network
 
@@ -134,7 +137,7 @@ Session hosts have no public IPs. All egress goes through the hub firewall, and 
 
 | Rule | Destination | Port |
 |---|---|---|
-| Service tags | `WindowsVirtualDesktop`, `AzureMonitor`, `AzureActiveDirectory` | TCP 443 |
+| Service tags | `WindowsVirtualDesktop`, `AzureMonitor`, `AzureActiveDirectory`, and `AzureAttestation` with Guest Attestation | TCP 443 |
 | Windows activation | `azkms.<storage suffix>`, `kms.<storage suffix>` | TCP 1688 |
 | FQDN tags | `WindowsVirtualDesktop`, `WindowsUpdate`, `WindowsDiagnostics`, `MicrosoftActiveProtectionService` | 80, 443 |
 | Certificate revocation | `oneocsp.microsoft.com`, `www.microsoft.com`, `ctldl.windowsupdate.com` | 80, 443 |
@@ -159,6 +162,49 @@ The full list is in [Required FQDNs and endpoints for Azure Virtual Desktop](htt
 ## Custom images
 
 Set `sessionHosts.galleryImageResourceId` to an image definition (latest version) or version produced by `az-image-builder` (`workload/params/win11-avd.bicepparam`). To replace hosts with a new image, raise `sessionHosts.startIndex` past the current hosts and deploy, then drain and delete the old ones.
+
+## Host hardening
+
+These steps run on each host after registration and FSLogix, in this order. Each is a Run Command or extension in `modules/avd/session-hosts`.
+
+| Step | Setting | Default |
+|---|---|---|
+| Guest Attestation extension (boot integrity monitoring, reported in Defender for Cloud) | `sessionHosts.guestAttestation` | on; adds `AzureAttestation` to the firewall rule |
+| Deferred STIG settings: `C:\ProgramData\STIG\Apply-DeferredStigs.ps1 -Phase Deploy` | `sessionHosts.applyDeferredStigs` | on for Compute Gallery images, off for Marketplace images |
+| Disable local administrators (V-253432), part of the STIG step | `sessionHosts.disableLocalAdministrators` | on |
+| Windows LAPS break-glass account | `localAdmin.breakGlass` | off |
+| Daily compliance evidence task | `compliance.evidence` | off |
+
+`applyDeferredStigs` needs an image built by `az-image-builder` with the STIG package; the deployment is rejected when it's set without `galleryImageResourceId`, and the Run Command fails on a gallery image without the package. The STIG step renames the built-in administrator to `X_Admin`, denies it network logon and, with `disableLocalAdministrators`, disables every enabled local administrator, including `sessionHosts.adminUsername`. After that, sign-in uses Entra ID (or domain) accounts with the VM administrator login role; Run Command and Serial Console still work.
+
+### Break-glass local administrator
+
+`localAdmin.breakGlass.enabled: true` gives each host one local administrator managed by Windows LAPS automatic account management: LAPS creates the account (`accountName`, default `WLapsAdmin`), keeps it enabled, rotates its password every `passwordAgeDays` (default 30) and backs it up to Microsoft Entra ID (`backupDirectory: EntraID`, the default for Entra-joined hosts) or AD DS. After the account signs in, LAPS resets the password and signs it out once `postAuthenticationResetDelayHours` (default 8) have passed. It runs after the STIG step, so it is the one local administrator left enabled. Record it as an exception in the system security plan; whether it satisfies V-253432 is the assessor's call.
+
+Requirements and how to use it:
+
+- Windows 11 24H2 or later (automatic account management). The Run Command fails on older builds.
+- Tenant setting: **Microsoft Entra ID > Devices > Device settings > Enable Microsoft Entra Local Administrator Password Solution (LAPS)** set to Yes.
+- `configurationMethod`:
+  - `RunCommand` (default without Intune) writes the Windows LAPS *Local Configuration* registry root (`HKLM\Software\Microsoft\Windows\CurrentVersion\LAPS\Config`) and processes it at once. Microsoft describes this root as primarily for testing and development, and LAPS ignores it when an Intune (CSP) or Group Policy LAPS policy is present. Use it only where neither exists.
+  - `Intune` (default with `identity.intuneEnrollment`) writes nothing. Create one Intune policy (**Endpoint security > Account protection > Create policy**, platform **Windows**, profile **Local admin password solution (Windows LAPS)**) assigned to the host device group, with Backup Directory set to Microsoft Entra ID and the same age, length, complexity and post-authentication values. Intune's documentation says its LAPS policies manage an account that already exists rather than create one; if the profile in your tenant doesn't offer the Windows 11 24H2 automatic account management settings, create the account first (for example with an Intune script) and set **Administrator Account Name** to it. Intune lists Endpoint security profiles for the Windows platform as supported on multi-session hosts.
+  - Domain-joined hosts back up to Entra ID only when they're hybrid joined; otherwise set `backupDirectory: ActiveDirectory` (or use the LAPS Group Policy).
+- Reading the password needs `microsoft.directory/deviceLocalCredentials/password/read`, held by the Cloud Device Administrator role, or a custom role with that permission. Make that role eligible through PIM rather than standing. Retrieve it in **Entra ID > Devices > Local administrator password recovery**, in Intune (device > Local admin password), or with Microsoft Graph (`deviceLocalCredentials`, base64-encoded).
+- The backed-up password is deleted with the device object, so retrieve it before deleting a host from Entra ID.
+- Local accounts are denied network logon by the STIG baseline, so use the account through the Serial Console or a Bastion console session where policy allows local interactive sign-in.
+
+### Compliance evidence
+
+`compliance.evidence: true` installs a scheduled task (`\AVD\AVD compliance evidence`, SYSTEM, daily at `compliance.dailyAt`) that appends JSON lines to `C:\ProgramData\STIG\evidence\compliance-<date>.json`. The second data collection rule sends them to the custom table `AvdComplianceEvidence_CL` in the central workspace (created by the deployment), and the **<pool> session host compliance** workbook shows status by host, failing checks and hosts that stopped reporting. Each run records:
+
+- whether the deploy-time STIG step ran,
+- each deferred registry policy and security template setting against the host's current value,
+- AppLocker enforcement mode per rule collection, Defender real-time protection and signature age,
+- optionally, rule results from an XCCDF file written by a SCAP scanner already on the image (`compliance.scapCommand`, `scapArguments`, `scapResultsPath`). No scanner is installed by this repo.
+
+This is configuration evidence for review. It doesn't establish compliance on its own, and it only covers the settings listed. Custom log collection needs a data collection endpoint (`monitoring.dataCollectionEndpointResourceId`); the deployment is rejected without one.
+
+`compliance.securityEvents: true` adds AppLocker (all four logs, warnings and errors: audit hits and blocks) and Defender Antivirus (`Microsoft-Windows-Windows Defender/Operational`, warnings, errors and 5007 configuration changes) to the `Event` table. AppLocker logs are verbose; the filter keeps only warnings and errors as Microsoft recommends for forwarding.
 
 ## Parameters
 
@@ -185,6 +231,8 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 | `applicationGroups` | applicationGroupType[] | no | see template | Application groups. Defaults to one desktop application group. |
 | `workspaceFriendlyName` | string | no | `"Virtual Desktop"` | Workspace friendly name. |
 | `scaling` | scalingType | no | `{}` | Scaling plan settings. |
+| `localAdmin` | localAdminType | no | `{}` | Local administrator settings: a Windows LAPS-managed break-glass account. |
+| `compliance` | complianceType | no | `{}` | Compliance evidence and AppLocker and Defender event collection. |
 | `enableAlerts` | bool | no | `true` | Email-free alerting: alerts use the landing zone action group from monitoring.actionGroupResourceId. |
 | `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
 
@@ -196,4 +244,5 @@ Set `sessionHosts.galleryImageResourceId` to an image definition (latest version
 | `profileStorageAccountResourceId` | string | Resource ID of the FSLogix storage account (file share or Cloud Cache blob account), empty when disabled. |
 | `virtualNetworkResourceId` | string | Resource ID of the spoke virtual network. |
 | `ipGroupResourceIds` | object | Resource IDs of the firewall IP Groups (sessionHosts, privateEndpoints), empty when useFirewallIpGroups is false. |
+| `complianceWorkbookResourceId` | string | Resource ID of the session host compliance workbook, empty when compliance.evidence is false. |
 <!-- END_PARAMS -->

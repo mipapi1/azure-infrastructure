@@ -11,6 +11,11 @@ AVD Insights data collection rule (`microsoft-avdi-<prefix>`, the name prefix th
 | Profile storage latency | File service metric | base + 1 |
 | Profile share above 80% of quota | File service metric | base + 1 |
 
+Optional, in a second rule `<prefix>-dcr-security` (associate it with the hosts too):
+
+- `complianceEvidence`: JSON lines from `C:\ProgramData\STIG\evidence\compliance-*.json` to the custom table `AvdComplianceEvidence_CL` (created in the workspace's resource group with the workspace table AVM), and a shared workbook (`workbooks/compliance.workbook.json`). Needs a data collection endpoint.
+- `securityEvents`: AppLocker and Defender Antivirus warnings and errors, and Defender configuration changes (5007), to `Event`.
+
 ## Parameters
 
 <!-- BEGIN_PARAMS -->
@@ -28,10 +33,14 @@ AVD Insights data collection rule (`microsoft-avdi-<prefix>`, the name prefix th
 | `profileStorageLatencyThresholdMs` | int | no | `50` | Profile storage end-to-end latency threshold in milliseconds. |
 | `actionGroupResourceId` | string | no | `""` | Action group notified by every alert. |
 | `baseSeverity` | int | no | `1` | Severity offset: prod alerts at the given severity, staging can pass higher numbers to keep noise down. |
+| `complianceEvidence` | bool | no | `false` | Collect the daily compliance evidence the session hosts write (custom table AvdComplianceEvidence_CL) and deploy a compliance workbook. Needs dataCollectionEndpointResourceId. |
+| `securityEvents` | bool | no | `false` | Forward AppLocker and Microsoft Defender Antivirus events (warnings and errors, plus Defender configuration changes) to the Event table. |
 | `tags` | object | no |  | Tags applied to every resource. |
 | `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
 
 | Output | Type | Description |
 |---|---|---|
 | `avdInsightsDataCollectionRuleResourceId` | string | Resource ID of the AVD Insights data collection rule. Associate it with every session host. |
+| `securityDataCollectionRuleResourceId` | string | Resource ID of the compliance evidence and security events rule, empty when neither is enabled. Associate it with every session host. |
+| `complianceWorkbookResourceId` | string | Resource ID of the compliance workbook, empty when complianceEvidence is false. |
 <!-- END_PARAMS -->

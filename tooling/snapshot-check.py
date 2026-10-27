@@ -82,6 +82,32 @@ def check_avd(snap: dict) -> list[str]:
                 if (ipc.get("properties") or {}).get("publicIPAddress"):
                     errors.append(f"{r['name']}: session host NIC has a public IP")
     errors += check_ip_groups(resources)
+    errors += check_host_order(resources)
+    return errors
+
+
+# Run Commands that must run in this order on each host. bicep snapshot lists resources in
+# dependency order, so a later step listed before an earlier one means a missing dependsOn.
+HOST_STEPS = ["configure-fslogix", "apply-deferred-stigs", "configure-laps-break-glass", "register-compliance-evidence"]
+
+
+def check_host_order(resources: list[dict]) -> list[str]:
+    errors = []
+    seen: dict[str, list[str]] = {}
+    for r in resources:
+        if rtype(r) == "microsoft.compute/virtualmachines/runcommands":
+            host, _, step = r["name"].partition("/")
+            if step in HOST_STEPS:
+                seen.setdefault(host, []).append(step)
+    for host, steps in seen.items():
+        if steps != sorted(steps, key=HOST_STEPS.index):
+            errors.append(f"{host}: Run Commands out of order: {', '.join(steps)}")
+    # The scaling plan may be paused while hosts deploy, but its last state must be enabled.
+    plans = [r for r in resources if rtype(r) == "microsoft.desktopvirtualization/scalingplans"]
+    if plans:
+        refs = (plans[-1].get("properties") or {}).get("hostPoolReferences") or []
+        if not all(ref.get("scalingPlanEnabled") for ref in refs):
+            errors.append(f"{plans[-1]['name']}: scaling plan left disabled after the session hosts deploy")
     return errors
 
 

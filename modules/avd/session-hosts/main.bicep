@@ -106,6 +106,54 @@ param entraKerberos bool = identityMode == 'EntraJoined'
 @description('Optional. Users are cloud-only Entra identities. The FSLogix Run Command then also checks the documented Windows build for cloud-only Entra Kerberos.')
 param cloudOnlyIdentities bool = false
 
+@description('Optional. Install the Guest Attestation extension (boot integrity monitoring for Trusted Launch, reported in Defender for Cloud). Needs outbound HTTPS to the AzureAttestation service tag.')
+param guestAttestation bool = true
+
+@description('Optional. Run the deferred STIG step of az-image-builder images (C:\\ProgramData\\STIG\\Apply-DeferredStigs.ps1 -Phase Deploy) after registration and FSLogix. Fails on images without the STIG package. Defaults to true for Compute Gallery images.')
+param applyDeferredStigs bool = !empty(image.?galleryImageResourceId ?? '')
+
+@description('Optional. With applyDeferredStigs: disable every local administrator (V-253432). A break-glass account from breakGlass is configured afterwards and stays enabled.')
+param disableLocalAdministrators bool = true
+
+@description('Optional. One Windows LAPS-managed local administrator per host for break-glass access. The password is backed up to Microsoft Entra ID (or AD DS) and rotated.')
+param breakGlass {
+  @description('Required. Configure the break-glass account.')
+  enabled: bool
+  @description('Optional. RunCommand writes the Windows LAPS Local Configuration registry root during deployment. Intune leaves it to an Intune LAPS policy (recommended when hosts are enrolled; it takes precedence). Defaults to RunCommand.')
+  configurationMethod: ('RunCommand' | 'Intune')?
+  @description('Optional. Managed account name, 20 characters or fewer. Defaults to WLapsAdmin.')
+  @maxLength(20)
+  accountName: string?
+  @description('Optional. EntraID (Entra-joined or hybrid-joined hosts) or ActiveDirectory. Defaults to EntraID.')
+  backupDirectory: ('EntraID' | 'ActiveDirectory')?
+  @description('Optional. Maximum password age in days (7 or more with EntraID). Defaults to 30.')
+  @minValue(1)
+  @maxValue(365)
+  passwordAgeDays: int?
+  @description('Optional. Password length. Defaults to 20.')
+  @minValue(14)
+  @maxValue(64)
+  passwordLength: int?
+  @description('Optional. Hours after a sign-in before the password is reset and the account signed out. Defaults to 8.')
+  @minValue(1)
+  @maxValue(24)
+  postAuthenticationResetDelayHours: int?
+} = { enabled: false }
+
+@description('Optional. Daily compliance evidence written on each host for Azure Monitor Agent (C:\\ProgramData\\STIG\\evidence). Pair with the AVD monitoring module complianceEvidence rule.')
+param complianceEvidence {
+  @description('Required. Install the scheduled evidence task.')
+  enabled: bool
+  @description('Optional. Local time of the daily run, HH:mm. Defaults to 03:00.')
+  dailyAt: string?
+  @description('Optional. SCAP scanner executable on the image, run before the evidence is written. No scanner is installed by this repo.')
+  scapCommand: string?
+  @description('Optional. Scanner arguments.')
+  scapArguments: string?
+  @description('Optional. Folder the scanner writes XCCDF results to.')
+  scapResultsPath: string?
+} = { enabled: false }
+
 @description('Optional. Enable encryption at host (temp disk and caches encrypted at rest).')
 param encryptionAtHost bool = true
 
@@ -129,6 +177,7 @@ var intuneMdmId = '0000000a-0000-0000-c000-000000000000'
 var hostPoolSegments = split(hostPoolResourceId, '/')
 var hostNames = [for i in range(startIndex, count): '${namePrefix}-${padLeft(i, 3, '0')}']
 var useRunCommand = fslogix.enabled && (fslogix.?configurationMethod ?? 'RunCommand') == 'RunCommand'
+var useLapsRunCommand = breakGlass.enabled && (breakGlass.?configurationMethod ?? 'RunCommand') == 'RunCommand'
 var useBlobCloudCache = fslogix.enabled && (fslogix.?storageType ?? 'AzureFiles') == 'BlobCloudCache'
 var blobKeyName = fslogix.?blobKeyName ?? 'key1'
 // ARM evaluates the scope even when the reference is unused, so the fallback must be a valid ID.
@@ -248,6 +297,32 @@ resource vmRefs 'Microsoft.Compute/virtualMachines@2025-04-01' existing = [
   }
 ]
 
+// Boot integrity monitoring for Trusted Launch. No AVM extension parameter exists for it (VM AVM 0.22.3).
+resource guestAttestationExtension 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
+  for (hostName, i) in hostNames: if (guestAttestation) {
+    parent: vmRefs[i]
+    name: 'GuestAttestation'
+    location: location
+    tags: tags
+    properties: {
+      publisher: 'Microsoft.Azure.Security.WindowsAttestation'
+      type: 'GuestAttestation'
+      typeHandlerVersion: '1.0'
+      autoUpgradeMinorVersion: true
+      enableAutomaticUpgrade: true
+      settings: {
+        AttestationConfig: {
+          MaaSettings: { maaEndpoint: '', maaTenantName: 'GuestAttestation' }
+          AscSettings: { ascReportingEndpoint: '', ascReportingFrequency: '' }
+          useCustomToken: 'false'
+          disableAlerts: 'false'
+        }
+      }
+    }
+    dependsOn: [virtualMachines]
+  }
+]
+
 // Registers each host with the host pool. The token is read here, at deployment
 // time, and only passed in protected settings, so it never appears in outputs or
 // deployment history. Tokens are short-lived and refreshed on every host pool deployment.
@@ -284,7 +359,8 @@ resource agentRegistration 'Microsoft.Compute/virtualMachines/extensions@2025-04
         }
       }
     }
-    dependsOn: [virtualMachines]
+    // One extension operation at a time per VM.
+    dependsOn: [virtualMachines, guestAttestationExtension[i]]
   }
 ]
 
@@ -322,7 +398,84 @@ resource fslogixConfiguration 'Microsoft.Compute/virtualMachines/runCommands@202
           ]
         : []
     }
-    dependsOn: [agentRegistration]
+    dependsOn: [agentRegistration[i]]
+  }
+]
+
+// Host hardening, in order: deferred STIG settings (disables local administrators), then the
+// LAPS break-glass account (created and kept enabled by LAPS), then the evidence task, so the
+// first evidence run sees the final state.
+resource deferredStigs 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for (hostName, i) in hostNames: if (applyDeferredStigs) {
+    parent: vmRefs[i]
+    name: 'apply-deferred-stigs'
+    location: location
+    tags: tags
+    properties: {
+      asyncExecution: false
+      treatFailureAsDeploymentFailure: true
+      timeoutInSeconds: 1800
+      source: {
+        script: loadTextContent('scripts/Invoke-DeferredStigs.ps1')
+      }
+      parameters: [
+        { name: 'DisableLocalAdministrators', value: string(disableLocalAdministrators) }
+      ]
+    }
+    dependsOn: [agentRegistration[i], fslogixConfiguration[i]]
+  }
+]
+
+resource lapsConfiguration 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for (hostName, i) in hostNames: if (useLapsRunCommand) {
+    parent: vmRefs[i]
+    name: 'configure-laps-break-glass'
+    location: location
+    tags: tags
+    properties: {
+      asyncExecution: false
+      treatFailureAsDeploymentFailure: true
+      timeoutInSeconds: 600
+      source: {
+        script: loadTextContent('scripts/Set-LapsBreakGlass.ps1')
+      }
+      parameters: [
+        { name: 'AccountName', value: breakGlass.?accountName ?? 'WLapsAdmin' }
+        { name: 'BackupDirectory', value: breakGlass.?backupDirectory ?? 'EntraID' }
+        { name: 'PasswordAgeDays', value: string(breakGlass.?passwordAgeDays ?? 30) }
+        { name: 'PasswordLength', value: string(breakGlass.?passwordLength ?? 20) }
+        { name: 'PostAuthenticationResetDelay', value: string(breakGlass.?postAuthenticationResetDelayHours ?? 8) }
+      ]
+    }
+    dependsOn: [agentRegistration[i], fslogixConfiguration[i], deferredStigs[i]]
+  }
+]
+
+resource complianceEvidenceTask 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for (hostName, i) in hostNames: if (complianceEvidence.enabled) {
+    parent: vmRefs[i]
+    name: 'register-compliance-evidence'
+    location: location
+    tags: tags
+    properties: {
+      asyncExecution: false
+      treatFailureAsDeploymentFailure: true
+      timeoutInSeconds: 600
+      source: {
+        script: replace(
+          loadTextContent('scripts/Register-ComplianceEvidence.ps1'),
+          '__COLLECTOR_BASE64__',
+          loadFileAsBase64('scripts/Write-ComplianceEvidence.ps1')
+        )
+      }
+      parameters: [
+        { name: 'DailyAt', value: complianceEvidence.?dailyAt ?? '03:00' }
+        { name: 'ScapCommand', value: complianceEvidence.?scapCommand ?? '' }
+        { name: 'ScapArguments', value: complianceEvidence.?scapArguments ?? '' }
+        { name: 'ScapResultsPath', value: complianceEvidence.?scapResultsPath ?? '' }
+      ]
+    }
+    dependsOn: [agentRegistration[i], fslogixConfiguration[i], deferredStigs[i], lapsConfiguration[i]]
   }
 ]
 
