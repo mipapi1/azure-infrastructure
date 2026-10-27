@@ -164,6 +164,8 @@ var guestAttestation = sessionHosts.?guestAttestation ?? true
 var complianceEvidence = compliance.?evidence ?? false
 var securityEvents = compliance.?securityEvents ?? false
 var breakGlass = localAdmin.?breakGlass ?? { enabled: false }
+var autoGrow = useAzureFiles && (fslogix.?autoGrow.?enabled ?? false)
+var autoGrowScheduleName = 'fslogix-share-autogrow'
 var exclusionTag = scaling.?exclusionTag ?? 'scaling-exclude'
 var adminGroups = identity.?adminGroupObjectIds ?? []
 
@@ -238,6 +240,7 @@ var roleIds = {
   desktopVirtualizationUser: '1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63'
   smbShareContributor: '0c867c2a-1d8c-454a-a3db-ab2ea1bdc8bb'
   smbShareElevatedContributor: 'a7264617-510b-434b-a828-9731dc254ea7'
+  storageAccountContributor: '17d1049b-9a84-46fb-8f53-869881c3d3ab'
 }
 
 var computeRoleAssignments = concat(
@@ -717,6 +720,48 @@ module profileStorage 'br/public:avm/res/storage/storage-account:0.33.1' = if (u
         metricCategories: [{ category: 'Transaction' }]
       }
     ]
+    // The auto-grow runbook changes the share quota (control plane only, no data access).
+    roleAssignments: autoGrow
+      ? [
+          {
+            principalId: fslogixAutomation!.outputs.?systemAssignedMIPrincipalId ?? ''
+            principalType: 'ServicePrincipal'
+            roleDefinitionIdOrName: subscriptionResourceId(
+              'Microsoft.Authorization/roleDefinitions',
+              roleIds.storageAccountContributor
+            )
+          }
+        ]
+      : []
+    lock: lock
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [resourceGroups]
+}
+
+// Share auto-grow (fslogix.autoGrow). ARM can't upload runbook content from a file, so the
+// runbook is published and linked to this schedule by scripts/Publish-FslogixAutoGrowRunbook.ps1.
+module fslogixAutomation 'br/public:avm/res/automation/automation-account:0.19.3' = if (autoGrow) {
+  name: '${uniqueString(deployment().name, location)}-fslogix-automation'
+  scope: resourceGroup(rgNames.storage)
+  params: {
+    name: '${baseName}-aa-fslogix'
+    location: location
+    skuName: 'Basic'
+    managedIdentities: { systemAssigned: true }
+    disableLocalAuth: true
+    publicNetworkAccess: 'Disabled'
+    schedules: [
+      {
+        name: autoGrowScheduleName
+        description: 'FSLogix profile share quota check.'
+        frequency: 'Hour'
+        interval: fslogix.?autoGrow.?intervalHours ?? 6
+        timeZone: 'Etc/UTC'
+      }
+    ]
+    diagnosticSettings: diagnosticSettings
     lock: lock
     tags: tags
     enableTelemetry: enableTelemetry
@@ -811,6 +856,7 @@ module avdMonitoring '../modules/avd/monitoring/main.bicep' = {
     baseSeverity: isProd ? 1 : 3
     complianceEvidence: complianceEvidence
     securityEvents: securityEvents
+    fslogixWorkbook: useAzureFiles && (fslogix.?operationsWorkbook ?? false)
     tags: tags
     enableTelemetry: enableTelemetry
   }
@@ -941,3 +987,13 @@ output ipGroupResourceIds object = useFirewallIpGroups ? ipGroupResourceIds : {}
 
 @description('Resource ID of the session host compliance workbook, empty when compliance.evidence is false.')
 output complianceWorkbookResourceId string = avdMonitoring.outputs.complianceWorkbookResourceId
+
+@description('Values for scripts/Publish-FslogixAutoGrowRunbook.ps1, empty when fslogix.autoGrow is off.')
+output fslogixAutoGrow object = autoGrow
+  ? {
+      resourceGroupName: rgNames.storage
+      automationAccountName: fslogixAutomation!.outputs.name
+      scheduleName: autoGrowScheduleName
+      storageAccountResourceId: storageAccountResourceId
+    }
+  : {}

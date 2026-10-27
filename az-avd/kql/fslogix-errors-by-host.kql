@@ -1,0 +1,8 @@
+// FSLogix errors and warnings per session host, last 24 hours.
+// Source: Event (AVD Insights data collection rule). Replace <host-prefix>.
+Event
+| where TimeGenerated > ago(24h)
+| where Source == "Microsoft-FSLogix-Apps" and EventLevelName in ("Error", "Warning")
+| where Computer startswith "<host-prefix>"
+| summarize Errors = countif(EventLevelName == "Error"), Warnings = countif(EventLevelName == "Warning"), Last = max(TimeGenerated) by Computer
+| order by Errors desc

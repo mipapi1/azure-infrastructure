@@ -1,0 +1,7 @@
+// Authentication or authorization failures on the profile share (403), last 24 hours.
+// Kerberos misconfiguration or missing share roles show up here first.
+StorageFileLogs
+| where TimeGenerated > ago(24h)
+| where AccountName == "<storage-account>" and StatusCode == 403
+| summarize Count = count(), Last = max(TimeGenerated) by CallerIpAddress, AuthenticationType, StatusText, OperationName
+| order by Count desc

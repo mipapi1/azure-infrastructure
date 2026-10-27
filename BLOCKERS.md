@@ -73,3 +73,21 @@ Items found while hardening the platform. Each lists what was tried, the default
 - **What was found:** no Microsoft-documented SCAP scanner ships with Windows, and scanner licensing differs.
 - **Default:** `compliance.scapCommand` runs a scanner already on the image and parses its XCCDF results; without it, evidence covers the image's deferred settings, AppLocker and Defender only.
 - **Decision needed:** which scanner, if any, to add to the image build.
+
+## Phase 4: FSLogix storage operations
+
+### B-014 Runbook content is a post-deploy step
+- **What was tried:** the Automation AVM creates runbooks only from a `publishContentLink` URI; ARM can't take inline content.
+- **Default:** the deployment creates the account, identity, role and schedule; `az-avd/scripts/Publish-FslogixAutoGrowRunbook.ps1` publishes and links the runbook.
+- **Decision needed:** whether to host the runbook at a pinned URL (repository raw link or a storage blob with SAS) so the deployment can publish it.
+
+### B-015 Deployment resets the grown quota
+- **What was found:** `fslogix.shareQuotaGiB` is applied on every deployment, so an auto-grown quota is set back unless the parameter file is updated.
+- **Default:** documented; the runbook and script print the value to write back.
+- **Decision needed:** whether pipelines should read the live quota (for example with a pre-deployment `az storage share-rm show`) and pass it in.
+
+### B-016 Not verified
+- Automation cloud jobs with `publicNetworkAccess: Disabled` and no private endpoint: expected to work (cloud jobs don't use the public webhook or agent endpoints) but not confirmed in the documentation read.
+- `Get-AzRmStorageShare -GetShareUsage` and `Unregister-AzAutomationScheduledRunbook -JobScheduleId`: used from the Az module; only `Update-AzRmStorageShare` and `Import-AzAutomationRunbook` were checked on Microsoft Learn.
+- Workbook metric item JSON (`MetricsItem/2.0`, `chartType`, metric id format): no schema reference on Microsoft Learn; written to the format the portal exports. Check the workbook renders after the first deployment.
+- `StorageFileLogs` column names (`StatusCode`, `StatusText`, `ServerLatencyMs`, `DurationMs`, `AuthenticationType`, `CallerIpAddress`): written from memory of the table schema; not checked against the reference or run against a workspace.

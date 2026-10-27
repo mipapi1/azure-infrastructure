@@ -1,0 +1,163 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "intro",
+      "content": {
+        "json": "## FSLogix operations\nProfile share capacity and latency (Azure Monitor metrics, 30 days), FSLogix errors from the hosts, sign-in duration and share request failures. Queries match `az-avd/kql`."
+      }
+    },
+    {
+      "type": 10,
+      "name": "share-used-capacity",
+      "content": {
+        "version": "MetricsItem/2.0",
+        "size": 0,
+        "chartType": 2,
+        "resourceType": "microsoft.storage/storageaccounts/fileservices",
+        "metricScope": 0,
+        "resourceIds": [
+          "__FILE_SERVICE_ID__"
+        ],
+        "timeContext": {
+          "durationMs": 2592000000
+        },
+        "metrics": [
+          {
+            "namespace": "microsoft.storage/storageaccounts/fileservices",
+            "metric": "microsoft.storage/storageaccounts/fileservices--FileCapacity",
+            "aggregation": 4
+          }
+        ],
+        "title": "Share used capacity",
+        "gridSettings": {
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 10,
+      "name": "share-quota",
+      "content": {
+        "version": "MetricsItem/2.0",
+        "size": 0,
+        "chartType": 2,
+        "resourceType": "microsoft.storage/storageaccounts/fileservices",
+        "metricScope": 0,
+        "resourceIds": [
+          "__FILE_SERVICE_ID__"
+        ],
+        "timeContext": {
+          "durationMs": 2592000000
+        },
+        "metrics": [
+          {
+            "namespace": "microsoft.storage/storageaccounts/fileservices",
+            "metric": "microsoft.storage/storageaccounts/fileservices--FileShareCapacityQuota",
+            "aggregation": 4
+          }
+        ],
+        "title": "Share quota",
+        "gridSettings": {
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 10,
+      "name": "server-latency",
+      "content": {
+        "version": "MetricsItem/2.0",
+        "size": 0,
+        "chartType": 2,
+        "resourceType": "microsoft.storage/storageaccounts/fileservices",
+        "metricScope": 0,
+        "resourceIds": [
+          "__FILE_SERVICE_ID__"
+        ],
+        "timeContext": {
+          "durationMs": 2592000000
+        },
+        "metrics": [
+          {
+            "namespace": "microsoft.storage/storageaccounts/fileservices",
+            "metric": "microsoft.storage/storageaccounts/fileservices--SuccessServerLatency",
+            "aggregation": 4
+          }
+        ],
+        "title": "Server latency",
+        "gridSettings": {
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "fslogix-errors-by-host",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Event\n| where TimeGenerated > ago(24h)\n| where Source == \"Microsoft-FSLogix-Apps\" and EventLevelName in (\"Error\", \"Warning\")\n| where Computer startswith \"__HOST_PREFIX__\"\n| summarize Errors = countif(EventLevelName == \"Error\"), Warnings = countif(EventLevelName == \"Warning\"), Last = max(TimeGenerated) by Computer\n| order by Errors desc",
+        "size": 0,
+        "title": "FSLogix errors by host",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "most-frequent-fslogix-errors",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "Event\n| where TimeGenerated > ago(7d)\n| where Source == \"Microsoft-FSLogix-Apps\" and EventLevelName == \"Error\"\n| where Computer startswith \"__HOST_PREFIX__\"\n| extend Message = substring(RenderedDescription, 0, 200)\n| summarize Count = count(), Hosts = dcount(Computer), Last = max(TimeGenerated) by EventID, Message\n| order by Count desc",
+        "size": 0,
+        "title": "Most frequent FSLogix errors",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "sign-in-duration-by-user",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "WVDConnections\n| where TimeGenerated > ago(7d)\n| where State in (\"Started\", \"Connected\")\n| summarize Started = minif(TimeGenerated, State == \"Started\"), Connected = minif(TimeGenerated, State == \"Connected\") by CorrelationId, UserName, SessionHostName\n| where isnotempty(Connected)\n| extend Seconds = datetime_diff(\"second\", Connected, Started)\n| summarize Connections = count(), P50 = percentile(Seconds, 50), P95 = percentile(Seconds, 95), Max = max(Seconds) by UserName\n| order by P95 desc",
+        "size": 0,
+        "title": "Sign-in duration by user",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    },
+    {
+      "type": 3,
+      "name": "profile-share-requests-per-hour",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "StorageFileLogs\n| where TimeGenerated > ago(24h)\n| where AccountName == \"__STORAGE_ACCOUNT__\"\n| summarize Requests = count(),\n            Failed = countif(StatusCode >= 400),\n            Throttled = countif(StatusText has \"Throttl\" or StatusCode == 503),\n            AuthFailures = countif(StatusCode == 403),\n            AvgServerLatencyMs = avg(ServerLatencyMs),\n            P95DurationMs = percentile(DurationMs, 95)\n  by bin(TimeGenerated, 1h)\n| order by TimeGenerated asc",
+        "size": 0,
+        "title": "Profile share requests per hour",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "linechart"
+      }
+    },
+    {
+      "type": 3,
+      "name": "profile-share-authorization-failures",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "StorageFileLogs\n| where TimeGenerated > ago(24h)\n| where AccountName == \"__STORAGE_ACCOUNT__\" and StatusCode == 403\n| summarize Count = count(), Last = max(TimeGenerated) by CallerIpAddress, AuthenticationType, StatusText, OperationName\n| order by Count desc",
+        "size": 0,
+        "title": "Profile share authorization failures",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      }
+    }
+  ],
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

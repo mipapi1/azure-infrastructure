@@ -35,6 +35,7 @@ Optional, in a second rule `<prefix>-dcr-security` (associate it with the hosts 
 | `baseSeverity` | int | no | `1` | Severity offset: prod alerts at the given severity, staging can pass higher numbers to keep noise down. |
 | `complianceEvidence` | bool | no | `false` | Collect the daily compliance evidence the session hosts write (custom table AvdComplianceEvidence_CL) and deploy a compliance workbook. Needs dataCollectionEndpointResourceId. |
 | `securityEvents` | bool | no | `false` | Forward AppLocker and Microsoft Defender Antivirus events (warnings and errors, plus Defender configuration changes) to the Event table. |
+| `fslogixWorkbook` | bool | no | `false` | Deploy the FSLogix operations workbook. Needs profileStorageAccountResourceId (Azure Files). |
 | `tags` | object | no |  | Tags applied to every resource. |
 | `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
 
@@ -43,4 +44,5 @@ Optional, in a second rule `<prefix>-dcr-security` (associate it with the hosts 
 | `avdInsightsDataCollectionRuleResourceId` | string | Resource ID of the AVD Insights data collection rule. Associate it with every session host. |
 | `securityDataCollectionRuleResourceId` | string | Resource ID of the compliance evidence and security events rule, empty when neither is enabled. Associate it with every session host. |
 | `complianceWorkbookResourceId` | string | Resource ID of the compliance workbook, empty when complianceEvidence is false. |
+| `fslogixWorkbookResourceId` | string | Resource ID of the FSLogix operations workbook, empty when fslogixWorkbook is false. |
 <!-- END_PARAMS -->

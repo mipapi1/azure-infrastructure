@@ -163,6 +163,47 @@ The full list is in [Required FQDNs and endpoints for Azure Virtual Desktop](htt
 
 Set `sessionHosts.galleryImageResourceId` to an image definition (latest version) or version produced by `az-image-builder` (`workload/params/win11-avd.bicepparam`). To replace hosts with a new image, raise `sessionHosts.startIndex` past the current hosts and deploy, then drain and delete the old ones.
 
+## Operations
+
+Day-2 tasks for the FSLogix profile store. Scripts are in `scripts/`, queries in `kql/`.
+
+### Share capacity
+
+Premium Azure Files is billed on the provisioned quota (`fslogix.shareQuotaGiB`), not on usage, and the share alert fires at 80% of quota.
+
+- **Resize by hand:** `scripts/Resize-FslogixShare.ps1 -ResourceGroupName <storage-rg> -StorageAccountName <account> -GrowPercent 25` (or `-QuotaGiB 2048`). It reads current usage, refuses a quota that leaves less than 10% free and supports `-WhatIf`.
+- **Auto-grow:** `fslogix.autoGrow.enabled: true` deploys an Automation account (`<pool>-aa-fslogix`, local auth and public network access off) with a system-assigned identity holding Storage Account Contributor on the profile storage account, and an hourly schedule (`intervalHours`, default 6). ARM can't upload runbook content, so after the deployment publish the runbook and link it to the schedule:
+
+  ```powershell
+  $o = (Get-AzSubscriptionDeployment -Name <deployment>).Outputs.fslogixAutoGrow.Value
+  ./scripts/Publish-FslogixAutoGrowRunbook.ps1 -ResourceGroupName $o.resourceGroupName.Value `
+      -AutomationAccountName $o.automationAccountName.Value -ScheduleName $o.scheduleName.Value `
+      -StorageAccountResourceId $o.storageAccountResourceId.Value -MaxQuotaGiB 4096
+  ```
+
+  The runbook (`scripts/runbooks/Invoke-FslogixShareAutoGrow.ps1`) grows the quota by 20% when usage reaches 80%, up to `MaxQuotaGiB`, and never shrinks it.
+- **Both:** the deployment sets the quota from `fslogix.shareQuotaGiB` every time it runs, so after any grow update `shareQuotaGiB` in the parameter file. The script and the runbook output print the value to use. A deployment with a lower value tries to shrink the share; that fails if usage is above the new quota, and auto-grow grows it again otherwise.
+
+### One user's profile container
+
+Raising `fslogix.profileSizeInMBs` grows every user's container at next sign-in (FSLogix never shrinks a container). For one user only, sign the user out, then on a Windows machine that reaches the private endpoint (a drained session host works), as a local administrator with Storage File Data SMB Share Elevated Contributor:
+
+```powershell
+./scripts/Resize-FslogixProfile.ps1 -Path '\\<account>.file.<suffix>\profiles\<sid>_<user>\Profile_<user>.VHDX' -SizeGB 60
+```
+
+It stops if the container is attached, backs it up next to the original (`-SkipBackup` to skip), expands it with `diskpart expand vdisk`, attaches it to extend the volume and detaches it. Delete the backup after the user has signed in.
+
+### Reports and queries
+
+- `scripts/Get-FslogixProfileReport.ps1 -SharePath '\\<account>.file.<suffix>\profiles' -OutputPath profiles.csv`: every container with size, percent of the maximum, last write, stale flag (no write in 90 days) and whether it's attached.
+- `kql/`: FSLogix errors by host and by message, sign-in duration per user, share requests, failures and throttling per hour, and 403s on the share. See `kql/README.md`.
+- `fslogix.operationsWorkbook: true` deploys the **<pool> FSLogix operations** workbook with the same queries plus share used capacity, quota and server latency from Azure Monitor metrics.
+
+### Removing stale containers
+
+The report flags containers not written in 90 days. Delete them only after confirming the user has left (profile data can't be recovered once the share's 7-day soft delete expires); there is no automatic cleanup.
+
 ## Host hardening
 
 These steps run on each host after registration and FSLogix, in this order. Each is a Run Command or extension in `modules/avd/session-hosts`.
@@ -245,4 +286,5 @@ This is configuration evidence for review. It doesn't establish compliance on it
 | `virtualNetworkResourceId` | string | Resource ID of the spoke virtual network. |
 | `ipGroupResourceIds` | object | Resource IDs of the firewall IP Groups (sessionHosts, privateEndpoints), empty when useFirewallIpGroups is false. |
 | `complianceWorkbookResourceId` | string | Resource ID of the session host compliance workbook, empty when compliance.evidence is false. |
+| `fslogixAutoGrow` | object | Values for scripts/Publish-FslogixAutoGrowRunbook.ps1, empty when fslogix.autoGrow is off. |
 <!-- END_PARAMS -->

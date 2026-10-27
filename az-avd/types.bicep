@@ -154,6 +154,20 @@ type fslogixType = {
 
   @description('Optional. AzureFiles only: domain properties for AD DS (or hybrid Entra Kerberos) authentication. Ignored for CloudOnly users.')
   activeDirectoryProperties: object?
+
+  @description('Optional. AzureFiles only: grow the share quota automatically with an Azure Automation runbook. Off by default. The runbook content is published after deployment with scripts/Publish-FslogixAutoGrowRunbook.ps1.')
+  autoGrow: {
+    @description('Required. Deploy the Automation account, its managed identity (Storage Account Contributor on the profile storage account) and the schedule.')
+    enabled: bool
+
+    @description('Optional. Hours between checks. Defaults to 6.')
+    @minValue(1)
+    @maxValue(24)
+    intervalHours: int?
+  }?
+
+  @description('Optional. Deploy the FSLogix operations workbook (share capacity and latency metrics, FSLogix errors, sign-in duration, share failures). Defaults to false.')
+  operationsWorkbook: bool?
 }
 
 @export()

@@ -45,6 +45,9 @@ param complianceEvidence bool = false
 @description('Optional. Forward AppLocker and Microsoft Defender Antivirus events (warnings and errors, plus Defender configuration changes) to the Event table.')
 param securityEvents bool = false
 
+@description('Optional. Deploy the FSLogix operations workbook. Needs profileStorageAccountResourceId (Azure Files).')
+param fslogixWorkbook bool = false
+
 @description('Optional. Tags applied to every resource.')
 param tags resourceInput<'Microsoft.Insights/dataCollectionRules@2024-03-11'>.tags?
 
@@ -241,6 +244,27 @@ resource complianceWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (comp
   dependsOn: [evidenceTable]
 }
 
+resource fslogixOperationsWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (fslogixWorkbook && !empty(profileStorageAccountResourceId)) {
+  name: guid(resourceGroup().id, namePrefix, 'fslogix-workbook')
+  location: location
+  kind: 'shared'
+  tags: tags
+  properties: {
+    displayName: '${namePrefix} FSLogix operations'
+    category: 'workbook'
+    sourceId: logAnalyticsWorkspaceResourceId
+    serializedData: replace(
+      replace(
+        replace(loadTextContent('workbooks/fslogix.workbook.json'), '__HOST_PREFIX__', sessionHostPrefix),
+        '__STORAGE_ACCOUNT__',
+        last(split(profileStorageAccountResourceId, '/'))
+      ),
+      '__FILE_SERVICE_ID__',
+      '${profileStorageAccountResourceId}/fileServices/default'
+    )
+  }
+}
+
 var queryAlerts = [
   {
     key: 'no-available-hosts'
@@ -388,3 +412,8 @@ output securityDataCollectionRuleResourceId string = complianceEvidence || secur
 
 @description('Resource ID of the compliance workbook, empty when complianceEvidence is false.')
 output complianceWorkbookResourceId string = complianceEvidence ? complianceWorkbook.id : ''
+
+@description('Resource ID of the FSLogix operations workbook, empty when fslogixWorkbook is false.')
+output fslogixWorkbookResourceId string = fslogixWorkbook && !empty(profileStorageAccountResourceId)
+  ? fslogixOperationsWorkbook.id
+  : ''
