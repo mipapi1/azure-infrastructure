@@ -23,6 +23,24 @@ az deployment mg create --management-group-id <root-mg-id> --location eastus \
   --parameters az-landing-zone/governance/params/prod.bicepparam
 ```
 
+## Regulatory compliance and guardrails
+
+`compliancePolicy` (on by default) deploys `modules/governance/compliance-policy` at the root of the hierarchy. It does three things:
+
+- Assigns the built-in NIST SP 800-53 Rev. 5 initiative.
+- Creates and assigns a platform guardrails initiative: shared key access only with an approved `shared-key-exception` tag; no public network access on storage, Key Vault and Automation; no Automation local auth; encryption at host.
+- Leaves both assignments in `DoNotEnforce` with Audit effects in every environment. They report and do not block. Each hierarchy has its own definitions, so changes are tried in the canary hierarchy first.
+
+```bicep
+param compliancePolicy = {
+  enforcementMode: 'Default'      // after the canary runs clean
+  guardrailEffect: 'Audit'        // or Deny
+  sharedKeyExceptionValues: ['fslogix-cloud-cache']
+}
+```
+
+Results appear in Policy > Compliance. With a paid Defender plan, they also appear in Defender for Cloud > Regulatory compliance. `docs/CONTROL-MAPPING.md` maps NIST families to platform features and evidence. A compliant result does not certify anything (see that page). See D-032.
+
 ## Privileged access
 
 The aim is no standing privileged access except the two emergency access accounts. People get privileged Azure roles just in time through PIM; the tooling for each step is in `scripts/`.
@@ -50,6 +68,7 @@ Reading a session host's LAPS password (`az-avd`, `localAdmin.breakGlass`) needs
 | `vmMonitoringIdentityResourceId` | string | no | `""` | Resource ID of the user-assigned identity the Azure Monitor Agent uses (the landing zone logging identity). |
 | `enforcementMode` | `Default` \| `DoNotEnforce` | no | computed | Policy enforcement. Defaults to Default (enforced) in prod and DoNotEnforce (audit only) in staging. |
 | `subscriptionPlacement` | object | no | `{}` | Subscription IDs to place under each management group, keyed by short name (platform, connectivity, identity, management, corp, online, sandbox, decommissioned). |
+| `compliancePolicy` | compliancePolicyType | no | `{}` | NIST SP 800-53 Rev. 5 initiative and platform guardrails at the root management group. Report only (DoNotEnforce, Audit) unless changed. |
 | `eligibleRoleAssignments` | eligibleRoleAssignmentType[] | no | `[]` | PIM-eligible Azure role assignments on the hierarchy, instead of standing assignments. Find standing access with scripts/Get-StandingPrivilegedAccess.ps1. |
 | `eligibilityStartTime` | string | no | computed | Start of new eligibility schedules. Leave the default. |
 | `enableTelemetry` | bool | no | `true` | Enable AVM usage telemetry. |
@@ -57,4 +76,5 @@ Reading a session host's LAPS password (`az-avd`, `localAdmin.breakGlass`) needs
 | Output | Type | Description |
 |---|---|---|
 | `managementGroupIds` | object | Management group IDs keyed by short name. |
+| `guardrailsInitiativeResourceId` | string | Resource ID of the platform guardrails initiative, empty when compliancePolicy is disabled. |
 <!-- END_PARAMS -->

@@ -4,7 +4,7 @@ metadata description = 'Management group hierarchy aligned to Azure Landing Zone
 targetScope = 'managementGroup'
 
 import { environmentType } from '../../modules/shared/types.bicep'
-import { eligibleRoleAssignmentType } from 'types.bicep'
+import { compliancePolicyType, eligibleRoleAssignmentType } from 'types.bicep'
 
 @description('Required. Environment. prod builds the live hierarchy; staging builds a separate canary hierarchy to test policy changes first.')
 param environment environmentType
@@ -38,6 +38,9 @@ param enforcementMode ('Default' | 'DoNotEnforce') = environment == 'prod' ? 'De
 
 @description('Optional. Subscription IDs to place under each management group, keyed by short name (platform, connectivity, identity, management, corp, online, sandbox, decommissioned).')
 param subscriptionPlacement object = {}
+
+@description('Optional. NIST SP 800-53 Rev. 5 initiative and platform guardrails at the root management group. Report only (DoNotEnforce, Audit) unless changed.')
+param compliancePolicy compliancePolicyType = {}
 
 @description('Optional. PIM-eligible Azure role assignments on the hierarchy, instead of standing assignments. Find standing access with scripts/Get-StandingPrivilegedAccess.ps1.')
 param eligibleRoleAssignments eligibleRoleAssignmentType[] = []
@@ -265,6 +268,27 @@ module policyAssignments 'br/public:avm/ptn/authorization/policy-assignment:0.5.
 ]
 
 // ---------------------------------------------------------------------------
+// Regulatory compliance and guardrails (custom definitions live on the root group, so the
+// canary hierarchy carries its own copy and changes can be tried there first)
+// ---------------------------------------------------------------------------
+
+module compliance '../../modules/governance/compliance-policy/main.bicep' = if (compliancePolicy.?enabled ?? true) {
+  name: '${uniqueString(deployment().name)}-compliance'
+  scope: managementGroup(prefix)
+  params: {
+    managementGroupId: prefix
+    location: location
+    assignNist: compliancePolicy.?nist ?? true
+    nistParameters: compliancePolicy.?nistParameters ?? {}
+    enforcementMode: compliancePolicy.?enforcementMode ?? 'DoNotEnforce'
+    guardrailEffect: compliancePolicy.?guardrailEffect ?? 'Audit'
+    sharedKeyExceptionValues: compliancePolicy.?sharedKeyExceptionValues ?? ['fslogix-cloud-cache']
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [rootGroup]
+}
+
+// ---------------------------------------------------------------------------
 // Privileged access: PIM-eligible role assignments
 // ---------------------------------------------------------------------------
 
@@ -301,3 +325,8 @@ module eligibleAssignments 'br/public:avm/ptn/authorization/pim-role-assignment:
 
 @description('Management group IDs keyed by short name.')
 output managementGroupIds object = managementGroupIds
+
+@description('Resource ID of the platform guardrails initiative, empty when compliancePolicy is disabled.')
+output guardrailsInitiativeResourceId string = (compliancePolicy.?enabled ?? true)
+  ? compliance!.outputs.guardrailsInitiativeResourceId
+  : ''

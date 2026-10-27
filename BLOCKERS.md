@@ -108,3 +108,19 @@ Items found while hardening the platform. Each lists what was tried, the default
 - PIM for Groups policy lookup filter (`scopeId`/`scopeType eq 'Group'`/`roleDefinitionId eq 'member'`) on `roleManagementPolicyAssignments`: from the Graph PIM for Groups overview's linked APIs; the exact filter wasn't confirmed on the List page.
 - The `microsoft.aadiam/diagnosticSettings` API version (2017-04-01) and the category names in the README command.
 - PIM's default Azure resource role setting for permanent eligibility (the template uses 365-day eligibilities so it doesn't depend on it).
+
+## Phase 6: compliance policy
+
+### B-020 Defender for Cloud plan for the regulatory dashboard
+- **What was found:** the regulatory compliance dashboard needs a paid Defender plan other than Servers Plan 1 or API Plan 1. The platform does not choose Defender plans.
+- **Default:** the NIST initiative is assigned anyway. Policy > Compliance shows the results without Defender.
+- **Decision needed:** which Defender plans to enable on which subscriptions.
+
+### B-021 When to enforce
+- **Default:** `DoNotEnforce` with Audit effects everywhere, so nothing is blocked or remediated.
+- **Decision needed:** when to move the canary, and then prod, to `Default`, and whether any guardrail should become Deny. Existing accounts without the tag would then be flagged or blocked. That includes the image builder account, which already disables shared key, so it is compliant. Run the canary first and review Policy > Compliance.
+
+### B-022 Not verified
+- No what-if or deployment was run (az CLI is not available). Policy definition API version `2025-01-01` was accepted by the Bicep type index and the linter, but no deployment confirmed it.
+- The NIST initiative version (14.21.0) and its counts were read from Microsoft's azure-policy repository, not from a tenant. The built-in can change without notice.
+- The field `allowSharedKeyAccess` with `exists: false` follows the pattern of the built-in `8c6a50c6` definition. The custom rule's evaluation on real accounts was not tested.
