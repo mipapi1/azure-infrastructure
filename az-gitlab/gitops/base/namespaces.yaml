@@ -1,0 +1,53 @@
+# gitlab: the GitLab chart. Pod Security baseline (some chart components don't meet restricted),
+# with restricted reported as warnings. The Key Vault label opts in to the platform secret store.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+    secrets.platform/key-vault: allowed
+---
+# gitlab-runner: the runner manager. It only talks to GitLab and the Kubernetes API.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab-runner
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    secrets.platform/key-vault: allowed
+---
+# ci-jobs: CI job pods. baseline forbids privileged containers, host namespaces and host paths;
+# restricted would reject most build images that run as root. No Key Vault access.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-jobs
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+# Jobs run as this service account; azure.workload.identity/use on the job pods lets them push
+# to the registries the CI identity has AcrPush on (az-gitlab output ciClientId).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-job
+  namespace: ci-jobs
+  annotations:
+    azure.workload.identity/client-id: ${CI_CLIENT_ID}
+    azure.workload.identity/tenant-id: ${AZURE_TENANT_ID}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab
+  namespace: gitlab
+  annotations:
+    azure.workload.identity/client-id: ${GITLAB_CLIENT_ID}
+    azure.workload.identity/tenant-id: ${AZURE_TENANT_ID}
+automountServiceAccountToken: false

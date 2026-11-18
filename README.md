@@ -10,12 +10,11 @@ Bicep for an Azure platform built on [Azure Verified Modules (AVM)](https://azur
 | [`az-landing-zone`](az-landing-zone) | Subscription | Hub VNet, Azure Firewall with DNS proxy, Bastion, optional VPN/ExpressRoute gateway and DDoS, private DNS zones, Log Analytics with optional Sentinel, data collection rules and endpoint, AMPLS, Key Vault, budgets, Defender for Cloud |
 | [`az-image-builder`](az-image-builder) | Subscription | Isolated Image Builder environment and STIG-hardened Windows and Linux images in a Compute Gallery |
 | [`az-avd`](az-avd) | Subscription | AVD spoke, host pool, application groups, workspace, scaling plan, FSLogix on Azure Files with Entra Kerberos, session hosts, AVD Insights and alerts |
-| [`az-aks`](az-aks) | Subscription | AKS spoke, private cluster (Entra RBAC, CNI Overlay with Cilium, workload identity), registry, key vault, Managed Prometheus and Grafana, Flux GitOps |
+| [`az-aks`](az-aks) | Subscription | AKS spoke, private cluster (Entra RBAC, CNI Overlay with Cilium, workload identity), registry, key vault, Managed Prometheus and Grafana, Flux GitOps, optional AKS Backup. Also builds the tools cluster for GitLab (`params/tools-prod.bicepparam`) |
+| [`az-gitlab`](az-gitlab) | Subscription + Kubernetes | Internal GitLab on the tools cluster: PostgreSQL, Managed Redis and Blob Storage on private endpoints, Gitaly VM, DNS records, firewall rules, and the Flux manifests for GitLab and its runners |
 | [`az-apps`](az-apps) | Kubernetes | Hardened Helm chart, namespace guardrails, Flux releases, CI that builds, scans, signs and promotes images by digest |
-| [`modules`](modules) | | Shared modules: naming, types, spoke network, firewall rule collection group, AVD and AKS building blocks |
+| [`modules`](modules) | | Shared modules: naming, types, spoke network, firewall rule collection group, AVD, AKS, GitLab and governance building blocks |
 | [`docs`](docs) | | [Architecture](docs/ARCHITECTURE.md), [conventions](docs/CONVENTIONS.md), [decision log](docs/DECISIONS.md) |
-
-![Hub architecture](az-landing-zone/hub-architecture.png)
 
 ## Architecture
 
@@ -39,17 +38,24 @@ flowchart TB
     cluster[Private AKS] --- acr[(Registry)]
     cluster --- kv[(Key Vault)]
   end
+  subgraph tools["Tools spoke (az-aks tools-prod + az-gitlab)"]
+    tcluster[Tools AKS<br/>GitLab, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
+    tcluster --- gitaly[Gitaly VM]
+  end
   subgraph aib["Image Builder (az-image-builder)"]
     gal[(Compute Gallery)]
   end
   avd <-->|peering, UDR 0/0| afw
   aks <-->|peering, UDR 0/0| afw
+  tools <-->|peering, UDR 0/0| afw
   gal -.->|session host image| hosts
-  avd & aks -.->|diagnostics, metrics| mon
-  git[(This repository)] -->|Flux| cluster
+  avd & aks & tools -.->|diagnostics, metrics| mon
+  hosts -.->|443, 22 via firewall| tcluster
+  git[(Hosted Git)] -->|Flux| tcluster
+  tcluster -->|Flux after bootstrap| cluster
 ```
 
-All egress from spokes goes through the hub firewall, which also resolves the hub's private DNS zones for the spokes. PaaS services are reached through private endpoints; monitoring ingestion goes through the private link scope.
+All egress from spokes goes through the hub firewall, which also resolves the hub's private DNS zones for the spokes. PaaS services are reached through private endpoints; monitoring ingestion goes through the private link scope. GitLab is internal only: AVD session hosts and VPN or ExpressRoute clients reach it through the firewall on 443 and 22. The tools cluster follows hosted Git, so GitLab can be rebuilt without GitLab; the application cluster moves to GitLab once it runs ([az-gitlab](az-gitlab/README.md#bootstrap-order)).
 
 ## Which folders do I need?
 
@@ -65,6 +71,7 @@ flowchart TD
   aib --> wl{Workload?}
   wl -->|Virtual desktops| avd[Deploy az-avd]
   wl -->|Containers| aks[Deploy az-aks] --> apps[Push az-apps manifests<br/>Flux deploys them]
+  wl -->|Source control and CI| tools[Deploy az-aks tools-prod] --> gl[Deploy az-gitlab]
   wl -->|Something else| spoke[Compose modules/network/spoke-network<br/>with AVM modules]
 ```
 
@@ -78,6 +85,8 @@ flowchart TD
 | 4 | AVD | `az deployment sub create -l eastus -f az-avd/main.bicep -p az-avd/params/<env>.bicepparam` | 2, outputs `hub`, `monitoring`, `firewallPolicyResourceId`; 3 for custom images |
 | 5 | AKS | `az deployment sub create -l eastus -f az-aks/main.bicep -p az-aks/params/<env>.bicepparam` | 2, same outputs |
 | 6 | Apps | Merge to the branch Flux follows | 5 |
+| 7 | Tools cluster | `az deployment sub create -l eastus -f az-aks/main.bicep -p az-aks/params/tools-prod.bicepparam` | 2, same outputs; follows hosted Git |
+| 8 | GitLab | `az deployment sub create -l eastus -f az-gitlab/main.bicep -p az-gitlab/params/<env>.bicepparam`, then the bootstrap steps in [az-gitlab](az-gitlab/README.md#bootstrap-order) | 7 (prod) or 5 (staging, shared cluster); GitLab DNS zones in 2 |
 
 Workload parameter files take the hub outputs as resource IDs, so the hub and the workloads can live in different subscriptions. Values in `<angle brackets>` and all-zero GUIDs in parameter files are placeholders.
 
@@ -87,8 +96,12 @@ Everything runs in a pinned tooling container (`tooling/Dockerfile`: Bicep, PSRu
 
 ```bash
 make tools      # build the tooling image
-make validate   # bicep build, lint, format check, PSRule, Checkov, Kubernetes manifests, README tables
+make validate   # bicep build, lint, format check, PSRule, snapshots, cross-deployment checks,
+                # Checkov, Kubernetes manifests, rendered GitLab manifests, README tables
 make scan       # Checkov only (Kubernetes, Helm, Actions, Dockerfile, secrets)
+make snapshot   # offline evaluation of every params and test file (bicep snapshot) with expectations
+make deployments # address plan, CI runner pools, GitLab private endpoints
+make rendered   # GitLab overlays rendered with their charts: no public ingress, LB only in gitlab
 make smoke      # kind cluster smoke test of az-apps
 make docs       # regenerate README parameter tables
 ```

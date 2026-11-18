@@ -1,12 +1,11 @@
 using '../../main.bicep'
 
-// Test: cloud-only users with the Kerberos-free Cloud Cache blob store.
-// and no Entra Connect. Profiles on Azure Files with Entra Kerberos (Azure public cloud only).
-// For a Kerberos-free variant, or Azure Government, set fslogix.storageType to 'BlobCloudCache'.
-// After deploying, follow "Cloud-only identities: post-deploy steps" in the README.
+// Test: cloud-only users with the Kerberos-free Cloud Cache blob store (fslogix.storageType
+// BlobCloudCache). The storage account allows shared key access and carries the
+// shared-key-exception tag (D-025, D-032).
+// expect-property: microsoft.storage/storageaccounts allowSharedKeyAccess=True
 //
 // Values in <angle brackets> and the all-zero subscription ID are placeholders.
-// Take hub, monitoring and firewall values from the az-landing-zone outputs.
 
 var hubSub = '00000000-0000-0000-0000-000000000000'
 var hubPrefix = '/subscriptions/${hubSub}/resourceGroups/hub-staging-eus'

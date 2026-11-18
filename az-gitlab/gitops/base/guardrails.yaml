@@ -1,0 +1,109 @@
+# Namespace guardrails (D-023), with one documented exception (D-033): the gitlab namespace may
+# hold exactly one LoadBalancer service, the internal Git over SSH endpoint. HTTPS goes through
+# the managed NGINX controller in app-routing-system. A LoadBalancer service also takes node
+# ports, so one node port is allowed with it.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: services
+  namespace: gitlab
+spec:
+  hard:
+    services.loadbalancers: "1"
+    services.nodeports: "1"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: services
+  namespace: gitlab-runner
+spec:
+  hard:
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute
+  namespace: ci-jobs
+spec:
+  hard:
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.memory: 128Gi
+    pods: "60"
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+    persistentvolumeclaims: "0"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: ci-jobs
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 500m
+        memory: 1Gi
+      default:
+        memory: 4Gi
+---
+# Ingress to GitLab only from the ingress controller, the runner manager, CI jobs (git clone,
+# API, registry) and inside the namespace. Gitaly on a VM is outside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gitlab-ingress
+  namespace: gitlab
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app-routing-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gitlab-runner
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ci-jobs
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+    # Git over SSH arrives from the internal load balancer with the client address preserved.
+    - ports:
+        - port: 2222
+          protocol: TCP
+---
+# Nothing reaches CI job pods; their egress is limited by the runner subnet's NSG and firewall rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-ingress
+  namespace: ci-jobs
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-ingress
+  namespace: gitlab-runner
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 9252
+          protocol: TCP

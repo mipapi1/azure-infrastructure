@@ -20,7 +20,8 @@
   "flux": {
     "managerFilePatterns": [
       "/^az-aks/gitops/.+\\.ya?ml$/",
-      "/^az-apps/deploy/.+\\.ya?ml$/"
+      "/^az-apps/deploy/.+\\.ya?ml$/",
+      "/^az-gitlab/gitops/.+\\.ya?ml$/"
     ]
   },
   "customManagers": [
@@ -46,6 +47,17 @@
       ],
       "matchStrings": [
         "(?:IMAGE\\s*[:?]?=|IMAGE:|_image=\")\\s*\"?(?<depName>[a-z0-9./-]+):(?<currentValue>[A-Za-z0-9._-]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Container images pinned inside Flux HelmRelease values",
+      "managerFilePatterns": [
+        "/^az-aks/gitops/optional/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "image:\\s*(?<depName>ghcr\\.io/[a-z0-9./-]+):(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
       "datasourceTemplate": "docker"
     }
@@ -82,6 +94,19 @@
         "flux"
       ],
       "groupName": "Platform charts"
+    },
+    {
+      "description": "GitLab and GitLab Runner charts move together, one minor version at a time (GitLab upgrade path). The runner image tags in runner.yaml and scripts/import-runner-images.sh follow the runner chart's appVersion.",
+      "matchManagers": [
+        "flux"
+      ],
+      "matchPackageNames": [
+        "gitlab",
+        "gitlab-runner"
+      ],
+      "groupName": "GitLab",
+      "separateMinorPatch": true,
+      "dependencyDashboardApproval": true
     }
   ]
 }

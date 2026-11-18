@@ -7,7 +7,15 @@ Every az-*/params/*.bicepparam and az-*/tests/**/*.bicepparam file is snapshotte
     // expect-error: <text>
 
 must fail, with <text> in the error (parameter-validation guards). Every other
-file must succeed and pass the checks below. Snapshots are written to
+file must succeed and pass the checks below. Header comments
+
+    // expect-type: <resource type>
+    // expect-no-type: <resource type>
+    // expect-property: <resource type> <property.path>=<value>
+    // expect-no-property: <resource type> <property.path>=<value>
+
+assert that the snapshot does or doesn't predict a resource of that type, or one whose
+property (dotted path under properties) has that value. Snapshots are written to
 out/snapshot/. Run it with `make snapshot`.
 """
 import json
@@ -21,6 +29,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "out" / "snapshot"
 ZERO = "00000000-0000-0000-0000-000000000000"
 EXPECT = re.compile(r"^//\s*expect-error:\s*(.+)$")
+EXPECT_TYPE = re.compile(r"^//\s*expect-(no-)?type:\s*(\S+)\s*$", re.M)
+EXPECT_PROPERTY = re.compile(r"^//\s*expect-(no-)?property:\s*(\S+)\s+([\w.]+)=(.+?)\s*$", re.M)
 
 # Output names or values that look like secrets.
 SECRET_OUTPUT = re.compile(r"(?i)(token|password|connectionstring|accountkey|sharedaccesssignature|secret$|secretvalue)")
@@ -50,6 +60,30 @@ def snapshot(path: pathlib.Path) -> tuple[bool, str]:
 
 def rtype(r: dict) -> str:
     return r.get("type", "").lower()
+
+
+def check_expected_types(text: str, snap: dict) -> list[str]:
+    types = {rtype(r) for r in snap.get("predictedResources", [])}
+    errors = []
+    for negate, wanted in EXPECT_TYPE.findall(text):
+        wanted = wanted.lower()
+        if negate and wanted in types:
+            errors.append(f"expected no {wanted}, but the snapshot has one")
+        if not negate and wanted not in types:
+            errors.append(f"expected a {wanted}, but the snapshot has none")
+    for negate, wanted, path, value in EXPECT_PROPERTY.findall(text):
+        hits = [r for r in snap.get("predictedResources", []) if rtype(r) == wanted.lower() and str(dig(r.get("properties") or {}, path)) == value]
+        if negate and hits:
+            errors.append(f"expected no {wanted} with {path}={value}, found {len(hits)}")
+        if not negate and not hits:
+            errors.append(f"expected a {wanted} with {path}={value}, found none")
+    return errors
+
+
+def dig(obj, path: str):
+    for key in path.split("."):
+        obj = obj.get(key) if isinstance(obj, dict) else None
+    return obj
 
 
 def check_common(snap: dict) -> list[str]:
@@ -160,6 +194,7 @@ def main() -> int:
         else:
             snap = json.loads(generated.read_text())
             errors += check_common(snap)
+            errors += check_expected_types(path.read_text(), snap)
             errors += CHECKS.get(rel.split("/")[0], lambda s: [])(snap)
         if generated.exists():
             generated.replace(OUT / (rel.replace("/", "_").removesuffix(".bicepparam") + ".snapshot.json"))

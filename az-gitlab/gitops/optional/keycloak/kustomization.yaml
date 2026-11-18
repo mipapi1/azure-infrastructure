@@ -1,0 +1,7 @@
+# Optional Keycloak identity broker (D-034), off by default. Turn it on with keycloak.enabled in
+# az-gitlab (database and secret), then add this directory to the cluster's gitlab Kustomization
+# path list (az-aks/gitops/clusters/<cluster>/gitlab.yaml) or a kustomization that includes it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - keycloak.yaml

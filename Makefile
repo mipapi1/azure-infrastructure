@@ -6,7 +6,7 @@ DOCKER_RUN       = docker run --rm --platform $(PLATFORM) -v "$(CURDIR)":/src -w
 TOOLS            = $(DOCKER_RUN) $(IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help tools validate build lint format format-check psrule snapshot scan k8s docs docs-check smoke
+.PHONY: help tools validate build lint format format-check psrule snapshot deployments scan k8s rendered docs docs-check smoke
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -14,7 +14,7 @@ help: ## Show targets
 tools: ## Build the tooling image
 	docker build --platform $(PLATFORM) -t $(IMAGE) tooling
 
-validate: build lint format-check psrule snapshot scan k8s docs-check ## Run every check
+validate: build lint format-check psrule snapshot deployments scan k8s rendered docs-check ## Run every check
 
 build: ## Compile every Bicep file and parameter file
 	$(TOOLS) tooling/validate.sh build
@@ -34,6 +34,9 @@ psrule: ## PSRule for Azure (Well-Architected rules) on parameter files
 snapshot: ## Evaluate deployments offline (bicep snapshot) and check predicted resources
 	$(TOOLS) python3 tooling/snapshot-check.py
 
+deployments: ## Cross-deployment checks: address plan, CI runner pools, GitLab private endpoints
+	$(TOOLS) python3 tooling/check-deployments.py
+
 scan: ## Checkov IaC and secret scan (config in .checkov.yaml)
 	$(DOCKER_RUN) $(CHECKOV_IMAGE) --config-file .checkov.yaml --directory /src
 	@# Charts require an image digest, so Checkov's own Helm rendering skips them; scan them rendered.
@@ -42,6 +45,9 @@ scan: ## Checkov IaC and secret scan (config in .checkov.yaml)
 
 k8s: ## Render and validate Kubernetes manifests and Helm charts
 	$(TOOLS) tooling/validate.sh k8s
+
+rendered: ## Render the GitLab overlays with their charts and check them (no public ingress, LB only in gitlab)
+	$(TOOLS) tooling/validate.sh rendered
 
 docs: ## Regenerate parameter tables in module READMEs
 	$(TOOLS) python3 tooling/gen-docs.py

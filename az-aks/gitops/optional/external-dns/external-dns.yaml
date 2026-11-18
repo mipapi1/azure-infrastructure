@@ -1,0 +1,76 @@
+# external-dns for Azure Private DNS with workload identity (az-aks addons.externalDnsZoneNames
+# grants the zones). Records are created for annotated Services and Ingresses in
+# EXTERNAL_DNS_DOMAIN only (domainFilters); TXT ownership records stop it touching records it didn't create.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: external-dns-azure
+  namespace: external-dns
+type: Opaque
+stringData:
+  azure.json: |
+    {
+      "tenantId": "${AZURE_TENANT_ID}",
+      "subscriptionId": "${AZURE_SUBSCRIPTION_ID}",
+      "resourceGroup": "${DNS_ZONE_RESOURCE_GROUP}",
+      "useWorkloadIdentityExtension": true
+    }
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://kubernetes-sigs.github.io/external-dns
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: external-dns
+      version: 1.23.0
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: flux-system
+  values:
+    provider:
+      name: azure-private-dns
+    serviceAccount:
+      create: true
+      name: external-dns
+      annotations:
+        azure.workload.identity/client-id: ${EXTERNAL_DNS_CLIENT_ID}
+        azure.workload.identity/tenant-id: ${AZURE_TENANT_ID}
+    podLabels:
+      azure.workload.identity/use: "true"
+    sources: [service, ingress]
+    domainFilters: [${EXTERNAL_DNS_DOMAIN}]
+    policy: sync
+    registry: txt
+    txtOwnerId: ${CLUSTER}
+    extraVolumes:
+      - name: azure-config
+        secret:
+          secretName: external-dns-azure
+    extraVolumeMounts:
+      - name: azure-config
+        mountPath: /etc/kubernetes
+        readOnly: true
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { memory: 128Mi }

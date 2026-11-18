@@ -1,6 +1,34 @@
 metadata name = 'AKS types'
 metadata description = 'Parameter types for the AKS workload.'
 
+import { securityRuleType } from '../modules/shared/types.bicep'
+
+@export()
+@description('An extra node subnet, for pools that need their own firewall source (IP Group) and egress allowlist.')
+type nodeSubnetType = {
+  @description('Required. Subnet name, referenced by nodePoolType.subnetName.')
+  name: string
+
+  @description('Required. Subnet prefix.')
+  addressPrefix: string
+
+  @description('Optional. FQDNs nodes in this subnet may reach over HTTPS, instead of the cluster-wide allowedEgressFqdns. Defaults to none: only the AKS requirements.')
+  allowedEgressFqdns: string[]?
+}
+
+@export()
+@description('A subnet for virtual machines that belong to the cluster workload, for example a Gitaly server.')
+type vmSubnetType = {
+  @description('Required. Subnet name.')
+  name: string
+
+  @description('Required. Subnet prefix.')
+  addressPrefix: string
+
+  @description('Optional. NSG rules for the subnet.')
+  securityRules: securityRuleType[]?
+}
+
 @export()
 @description('Spoke network for AKS.')
 type aksNetworkType = {
@@ -12,6 +40,15 @@ type aksNetworkType = {
 
   @description('Required. Private endpoint subnet prefix (registry, key vault, monitor workspace, Grafana).')
   privateEndpointSubnetPrefix: string
+
+  @description('Optional. Extra NSG rules on the private endpoint subnet, for example to keep CI nodes away from a database endpoint. The defaults allow HTTPS from the VNet.')
+  privateEndpointSecurityRules: securityRuleType[]?
+
+  @description('Optional. Extra node subnets, each with its own egress allowlist (and IP Group with useFirewallIpGroups).')
+  additionalNodeSubnets: nodeSubnetType[]?
+
+  @description('Optional. Subnets for virtual machines in the spoke. Outbound goes through the hub firewall.')
+  vmSubnets: vmSubnetType[]?
 
   @description('Optional. Pod CIDR for CNI Overlay. Must not overlap any routed network. Defaults to 192.168.0.0/16.')
   podCidr: string?
@@ -58,6 +95,25 @@ type nodePoolType = {
 
   @description('Optional. Use Spot VMs (user pools only). Defaults to false.')
   spot: bool?
+
+  @description('Optional. Name of an additionalNodeSubnets entry to place the pool in. Defaults to snet-aks-nodes.')
+  subnetName: string?
+}
+
+@export()
+@description('An artifact cache rule on the cluster registry.')
+type registryCacheRuleType = {
+  @description('Optional. Rule name. Derived from the source repository when empty.')
+  name: string?
+
+  @description('Required. Upstream repository, for example mcr.microsoft.com/azurelinux/base/core.')
+  sourceRepository: string
+
+  @description('Optional. Repository in the registry. Defaults to the source path without the registry host.')
+  targetRepository: string?
+
+  @description('Optional. Credential set for upstreams that need authentication (Docker Hub). Created outside this template.')
+  credentialSetResourceId: string?
 }
 
 @export()
@@ -131,4 +187,28 @@ type aksMonitoringType = {
 
   @description('Optional. Deploy the Prometheus alert rules. Defaults to true.')
   alerts: bool?
+}
+
+@export()
+@description('Optional cluster add-ons, all off by default. The Azure side is deployed here; the in-cluster side is under az-aks/gitops/optional (add it to the cluster kustomization).')
+type aksAddonsType = {
+  @description('Optional. Azure Backup for AKS: Backup vault, daily operational-tier policy, extension storage and trusted access, in a separate resource group that also holds the snapshots (D-035).')
+  backup: {
+    @description('Required. Deploy AKS Backup.')
+    enabled: bool
+
+    @description('Optional. Days to keep recovery points. Defaults to 14 (prod) or 7 (staging).')
+    @minValue(1)
+    @maxValue(360)
+    retentionDays: int?
+
+    @description('Optional. Daily backup time, UTC HH:mm. Defaults to 02:00.')
+    backupTime: string?
+  }?
+
+  @description('Optional. Identity for the Kyverno admission controller (AcrPull on the cluster registry, federated to kyverno/kyverno-admission-controller) so it can read image signatures. Use with az-aks/gitops/optional/image-verification. Defaults to false.')
+  imageVerification: bool?
+
+  @description('Optional. Identity for external-dns (Private DNS Zone Contributor on these zones, federated to external-dns/external-dns). Use with az-aks/gitops/optional/external-dns. Zones must be in the hub DNS resource group.')
+  externalDnsZoneNames: string[]?
 }

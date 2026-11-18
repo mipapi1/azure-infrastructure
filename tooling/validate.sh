@@ -7,7 +7,8 @@
 #   validate.sh format     fail if any .bicep file is not formatted
 #   validate.sh format-fix format every .bicep file in place
 #   validate.sh psrule     PSRule for Azure against parameter files
-#   validate.sh k8s        kubeconform + helm lint for az-apps and az-aks/gitops
+#   validate.sh k8s        kubeconform + helm lint for az-apps, az-aks/gitops and az-gitlab/gitops
+#   validate.sh rendered   render the GitLab overlays (Flux substitution + helm template) and check them
 #   validate.sh arm        compile each deployment (main.bicep + params) to out/arm for scanners
 #   validate.sh all        everything above except format-fix
 set -euo pipefail
@@ -89,11 +90,29 @@ run_k8s() {
       helm template smoke "$chart" -f "$v" | kubeconform -strict -summary $schemas || fail=1
     done
   done
-  for d in az-apps/platform az-apps/deploy az-aks/gitops; do
+  for d in az-apps/platform az-apps/deploy az-aks/gitops az-gitlab/gitops; do
     [ -d "$d" ] || continue
     for overlay in $(find "$d" -name kustomization.yaml -exec dirname {} \;); do
       kustomize build "$overlay" | kubeconform -strict -summary -ignore-missing-schemas $schemas || fail=1
     done
+  done
+}
+
+# GitLab overlays rendered as the cluster sees them: Flux substitution with the cluster's
+# settings, every HelmRelease through helm template, then schema and policy checks.
+run_rendered() {
+  note "rendered GitLab manifests"
+  local schemas="-schema-location default -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+  local env cluster out
+  mkdir -p out/rendered
+  for env in prod staging; do
+    cluster=$([ "$env" = prod ] && echo tools-prod || echo staging)
+    out="out/rendered/gitlab-${env}.yaml"
+    kustomize build "az-gitlab/gitops/overlays/${env}" \
+      | python3 tooling/render-gitops.py "az-aks/gitops/clusters/${cluster}/cluster-settings.yaml" "az-aks/gitops/clusters/${cluster}/gitlab-settings.yaml" \
+      > "$out" || { fail=1; continue; }
+    kubeconform -strict -summary -ignore-missing-schemas $schemas "$out" || fail=1
+    python3 tooling/check-rendered.py --lb-namespaces gitlab --ingress-classes webapprouting.kubernetes.azure.com < "$out" || fail=1
   done
 }
 
@@ -118,8 +137,9 @@ case "${1:-all}" in
   format-fix) run_format_fix ;;
   psrule) run_psrule ;;
   k8s) run_k8s ;;
+  rendered) run_rendered ;;
   arm) run_arm ;;
-  all) run_build; run_lint; run_format; run_psrule; run_k8s ;;
+  all) run_build; run_lint; run_format; run_psrule; run_k8s; run_rendered ;;
   *) echo "unknown target: $1" >&2; exit 2 ;;
 esac
 

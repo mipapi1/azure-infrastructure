@@ -1,0 +1,142 @@
+# Keycloak on the GitLab pool with its own PostgreSQL database (az-gitlab keycloakDatabaseHost).
+# AVD sign-in never goes through Keycloak; it federates GitLab (or other tools) only.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.azure.com/key-vault: "true"
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: azure-key-vault
+  target:
+    name: keycloak-db
+  data:
+    - secretKey: password
+      remoteRef:
+        key: gitlab-keycloak-db-password
+    # Temporary admin for the first sign-in only: create a real admin, then delete this user.
+    - secretKey: bootstrap-admin-password
+      remoteRef:
+        key: gitlab-keycloak-bootstrap-admin
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls
+  namespace: keycloak
+spec:
+  secretName: keycloak-tls
+  dnsNames:
+    - ${KEYCLOAK_HOST}.${GITLAB_DOMAIN}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    kind: ClusterIssuer
+    name: platform-internal
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: codecentric
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://codecentric.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: keycloakx
+      # Keycloak 26.7.
+      version: 7.3.2
+      sourceRef:
+        kind: HelmRepository
+        name: codecentric
+        namespace: flux-system
+  values:
+    # Two or more replicas share sessions through the default (Infinispan) cache stack.
+    replicas: ${KEYCLOAK_REPLICAS}
+    command: [/opt/keycloak/bin/kc.sh]
+    args: [start]
+    http:
+      relativePath: /
+    proxy:
+      enabled: true
+      mode: xforwarded
+    extraEnv: |
+      - name: KC_HOSTNAME
+        value: https://${KEYCLOAK_HOST}.${GITLAB_DOMAIN}
+      - name: KC_DB_URL_PROPERTIES
+        value: "?sslmode=require"
+      - name: KC_BOOTSTRAP_ADMIN_USERNAME
+        value: bootstrap-admin
+      - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: keycloak-db
+            key: bootstrap-admin-password
+    database:
+      vendor: postgres
+      hostname: ${KEYCLOAK_DB_HOST}
+      port: 5432
+      database: keycloak
+      username: keycloak
+      existingSecret: keycloak-db
+      existingSecretKey: password
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    nodeSelector:
+      platform.workload: gitlab
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: gitlab
+        effect: NoSchedule
+    podDisruptionBudget:
+      minAvailable: 1
+    ingress:
+      enabled: true
+      ingressClassName: nginx-gitlab
+      rules:
+        - host: ${KEYCLOAK_HOST}.${GITLAB_DOMAIN}
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - ${KEYCLOAK_HOST}.${GITLAB_DOMAIN}
+          secretName: keycloak-tls
+      console:
+        enabled: false
+    metrics:
+      enabled: true

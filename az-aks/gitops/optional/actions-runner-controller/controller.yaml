@@ -1,0 +1,50 @@
+# GitHub Actions Runner Controller (scale set mode). Optional, for repositories still on GitHub
+# while GitLab is adopted, or for GitHub-hosted code that must build inside the private network.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arc-systems
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: actions-runner-controller
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 12h
+  url: oci://ghcr.io/actions/actions-runner-controller-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: arc
+  namespace: arc-systems
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: gha-runner-scale-set-controller
+      version: 0.15.0
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }

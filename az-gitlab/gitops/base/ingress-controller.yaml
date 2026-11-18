@@ -1,0 +1,18 @@
+# A dedicated application routing (managed NGINX) controller for GitLab, on an internal load
+# balancer with a fixed address that the GitLab DNS records point at. The add-on is installed
+# by az-aks; this only adds a controller instance.
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: nginx-gitlab
+spec:
+  ingressClassName: nginx-gitlab
+  controllerNamePrefix: nginx-gitlab
+  httpDisabled: true
+  loadBalancerAnnotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-load-balancer-ipv4: ${GITLAB_INGRESS_IP}
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+  scaling:
+    minReplicas: 2
+    maxReplicas: 6

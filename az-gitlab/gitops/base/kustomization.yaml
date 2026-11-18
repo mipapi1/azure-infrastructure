@@ -1,0 +1,15 @@
+# GitLab on AKS, cluster side. Reconciled by the cluster Flux (az-aks/gitops/clusters/<cluster>/gitlab.yaml)
+# with ${VARS} substituted from the gitlab-settings ConfigMap (az-gitlab deployment outputs).
+# Uses the External Secrets Operator and cert-manager that az-aks installs; only namespaced
+# resources live here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - guardrails.yaml
+  - ingress-controller.yaml
+  - certificate.yaml
+  - secrets.yaml
+  - gitlab.yaml
+  - runner.yaml
+  - monitoring.yaml

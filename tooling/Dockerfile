@@ -22,7 +22,7 @@ ARG KUBECTL_VERSION=1.34.12
 ARG DOCKER_CLI_VERSION=29.9.2
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git make python3 \
+ && apt-get install -y --no-install-recommends ca-certificates curl git make python3 python3-yaml \
  && rm -rf /var/lib/apt/lists/*
 
 RUN arch=x64 \

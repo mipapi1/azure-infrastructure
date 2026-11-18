@@ -44,3 +44,11 @@ param budget = {
 param defender = {
   plans: ['CloudPosture']
 }
+
+// GitLab (az-gitlab): its internal zone, and the PostgreSQL and Azure Managed Redis private
+// endpoint zones. Spokes resolve them through the firewall DNS proxy.
+param additionalPrivateDnsZones = [
+  'git-staging.example.internal'
+  'privatelink.postgres.database.azure.com'
+  'privatelink.redis.azure.net'
+]

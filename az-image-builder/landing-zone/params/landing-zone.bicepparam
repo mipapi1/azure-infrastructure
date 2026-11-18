@@ -22,10 +22,10 @@ param resourceGroupConfig = {
 
 param network = {
   name: '${baseName}-vnet'
-  addressPrefix: '10.20.0.0/24'
-  buildSubnet: { name: 'snet-build', addressPrefix: '10.20.0.0/27' }
-  containerInstanceSubnet: { name: 'snet-aci', addressPrefix: '10.20.0.32/27' }
-  privateEndpointSubnet: { name: 'snet-pe', addressPrefix: '10.20.0.64/28' }
+  addressPrefix: '10.40.0.0/24'
+  buildSubnet: { name: 'snet-build', addressPrefix: '10.40.0.0/27' }
+  containerInstanceSubnet: { name: 'snet-aci', addressPrefix: '10.40.0.32/27' }
+  privateEndpointSubnet: { name: 'snet-pe', addressPrefix: '10.40.0.64/28' }
 
   // Behind the hub firewall. The rule collection group is added to the hub policy.
   egress: {

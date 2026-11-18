@@ -91,8 +91,11 @@ flowchart TD
   hub --> aib["az-image-builder<br/>(optional custom images)"]
   hub --> avd["az-avd<br/>spoke + AVD"]
   hub --> aks["az-aks<br/>spoke + AKS"]
+  hub --> tools["az-aks (tools-prod)<br/>tools spoke + AKS"]
   aib -.-> avd
   aks --> apps["az-apps<br/>workloads on AKS"]
+  tools --> gitlab["az-gitlab<br/>GitLab, data services, runners"]
+  gitlab -.Flux source after bootstrap.-> aks
 ```
 
 ## 4. State after the build-out
@@ -132,4 +135,52 @@ flowchart LR
 | No CI, hooks or dependency updates | GitHub Actions (validate, what-if, app pipeline), GitLab CI for apps, pre-commit, Renovate |
 | Parameter styles differ | Typed parameters everywhere, shared types and naming |
 
-Not yet covered, by design or pending: `what-if` against a real subscription (needs a sandbox and the OIDC variables), enforcing image signatures in AKS, ACR cache rules to shrink the egress allowlist, and a second region.
+Not yet covered, by design or pending: `what-if` against a real subscription (needs a sandbox and the OIDC variables) and a second region. Image signature enforcement and ACR cache rules were added in the hardening pass below.
+
+## 5. Platform hardening
+
+```mermaid
+flowchart LR
+  subgraph hub["Hub (az-landing-zone)"]
+    afw[Azure Firewall<br/>IP Groups, DNS proxy]
+    zones[(Private DNS zones<br/>incl. GitLab, postgres, redis)]
+  end
+  subgraph avd["AVD spoke"]
+    hosts[Session hosts<br/>Entra or domain joined]
+    prof[(FSLogix<br/>Azure Files or Cloud Cache blob)]
+  end
+  subgraph app["Application AKS spoke"]
+    appaks[Application cluster]
+  end
+  subgraph tools["Tools spoke"]
+    toolsaks[Tools cluster<br/>gitlab pool, runner pool]
+    data[(PostgreSQL, Managed Redis,<br/>Blob, Registry)]
+    gvm[Gitaly VM]
+  end
+  hosts -->|443, 22 from the session host IP Group| afw --> toolsaks
+  appaks -->|Flux over 443| afw
+  toolsaks --- data & gvm
+  hosts --- prof
+```
+
+| Area | What changed | Decision |
+|---|---|---|
+| Identity | Cloud-only users, Kerberos-free FSLogix Cloud Cache on blob | D-025 |
+| Network | Optional firewall IP Groups per spoke subnet | D-028 |
+| AVD hosts | Hardening after registration (deferred STIGs, LAPS break-glass, compliance evidence) | D-029 |
+| FSLogix | Share auto-grow, operations workbook, KQL, resize scripts | D-030 |
+| Privileged access | PIM-eligible roles, PIM for Groups, break-glass accounts and alerts | D-031 |
+| Policy | NIST SP 800-53 Rev. 5 and platform guardrails, report only | D-032 |
+| GitLab | Tools spoke and cluster, GitLab on Azure data services, runners on a tainted pool | D-033, D-034 |
+| Cluster add-ons | AKS Backup, image signature verification, external-dns, Trivy Operator, Actions Runner Controller, all optional | D-035 |
+
+Address plan (checked by `make deployments`):
+
+| Network | prod | staging |
+|---|---|---|
+| Hub | 10.0.0.0/22 | 10.100.0.0/22 |
+| AVD | 10.10.0.0/22 | 10.110.0.0/23, cloud-only 10.112.0.0/23 |
+| Application AKS | 10.20.0.0/22 | 10.120.0.0/23 (runner subnet 10.120.1.64/26) |
+| Tools AKS | 10.30.0.0/22: nodes /24, runners /24, private endpoints /26, Gitaly /28 | shared with application AKS |
+| Image Builder | 10.40.0.0/24 | |
+| AKS pods and services | 192.168.0.0/16, 172.16.0.0/16 (outside every VNet) | same |

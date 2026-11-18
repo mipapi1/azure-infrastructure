@@ -124,3 +124,72 @@ Items found while hardening the platform. Each lists what was tried, the default
 - No what-if or deployment was run (az CLI is not available). Policy definition API version `2025-01-01` was accepted by the Bicep type index and the linter, but no deployment confirmed it.
 - The NIST initiative version (14.21.0) and its counts were read from Microsoft's azure-policy repository, not from a tenant. The built-in can change without notice.
 - The field `allowSharedKeyAccess` with `exists: false` follows the pattern of the built-in `8c6a50c6` definition. The custom rule's evaluation on real accounts was not tested.
+
+## Phase 7: GitLab tools spoke
+
+### B-023 PostgreSQL TLS without client certificates
+- **What was found:** the GitLab chart's `global.psql.ssl` sets `sslmode: verify-ca` and requires a client certificate and key. Azure PostgreSQL flexible server with password auth needs TLS but no client certificate.
+- **Tried:** searched the chart templates for an sslmode pass-through; there is none.
+- **Default:** `global.extraEnv.PGSSLMODE: require` (libpq reads it; webservice, sidekiq, migrations and toolbox include `global.extraEnv`) with `require_secure_transport` on.
+- **Decision needed:** confirm on a real server. If it fails, the fallback is to turn `require_secure_transport` off and rely on the private endpoint, which weakens SC-8.
+
+### B-024 Azure Managed Redis cluster policy
+- **What was found:** GitLab doesn't support Redis Cluster. Azure Managed Redis with the `EnterpriseCluster` policy presents one endpoint and hides the sharding, which should look like a single Redis to clients, but GitLab doesn't document Azure Managed Redis.
+- **Default:** `EnterpriseCluster`, port 10000, TLS, access keys.
+- **Decision needed:** test GitLab against it in staging. Azure Cache for Redis (the older service) is the fallback, with its retirement timeline in mind.
+
+### B-025 Runner images
+- **What was found:** registry.gitlab.com isn't a supported ACR artifact cache upstream, so `scripts/import-runner-images.sh` imports the runner and helper images.
+- **Not verified:** the helper image tag format `x86_64-v19.4.0`. The import fails loudly if it's wrong.
+
+### B-026 Application routing NGINX retirement
+- **What was found:** application routing NGINX gets Microsoft security patches only through November 2026. GitLab uses its own NGINX controller here.
+- **Default:** NGINX for now, because the platform's ingress is NGINX and cert-manager is set up for Ingress objects.
+- **Decision needed:** when to move GitLab (and the platform) to application routing with the Gateway API. The GitLab chart supports Gateway API (`global.gatewayApi`).
+
+### B-027 Gitaly VM configuration untested
+- `configure-gitaly.sh` passes `bash -n` but has not run on a VM. The Gitaly-only `gitlab.rb` follows GitLab's standalone Gitaly docs (17.5+ `gitlab_secret`).
+- `gitaly.trustedCaPem` can only be set after the first cluster sync, when the platform CA exists. Until then, Gitaly's calls back to GitLab fail TLS verification.
+
+### B-028 Keyless signing with self-hosted GitLab
+- **What was found:** D-022 signs keyless with the CI OIDC identity through the public Sigstore Fulcio. A GitLab instance on a private zone can't be used as an OIDC issuer for public Fulcio, which must fetch the issuer's discovery document.
+- **Default:** the image verification policy expects a keyless signature with `SIGNING_ISSUER`/`SIGNING_SUBJECT_REGEXP` (fits GitHub Actions) and is off by default in Audit.
+- **Decision needed:** for GitLab-built images, cosign with a Key Vault key (`azurekms://`) and a key attestor in the policy, or Notation with Azure Key Vault and Ratify.
+
+### B-029 Workload identity paths not tested
+- Object storage (AzureRM connection without a key), the registry `azure_v2` driver with `default_credentials` (beta in GitLab) and toolbox backups to Azure all use the `gitlab` workload identity. None ran against a real account.
+- Kyverno's `azure` credential provider with workload identity, and external-dns `azure-private-dns` with `useWorkloadIdentityExtension`, follow their docs but were not run.
+
+### B-030 AKS Backup with a user-assigned cluster identity
+- **What was found:** Microsoft Learn's AKS Backup CLI guide says only system-assigned managed identities are supported for backup, for both the Backup vault and the AKS cluster. The platform's clusters use a user-assigned control plane identity.
+- **Default:** `addons.backup` is off. When it's on, the module grants the documented roles to the user-assigned identity, and `new-backup-instance.sh` runs `validate-for-backup` before creating the instance.
+- **Decision needed:** test it. If validation fails, the options are a system-assigned cluster identity (a change to every cluster) or Velero with workload identity.
+
+### B-031 Image builder address range moved
+- **What was found:** `make deployments` found the image builder network (`10.20.0.0/24`, peered to the prod hub) overlapping the prod AKS spoke (`10.20.0.0/22`).
+- **Default:** moved the image builder to `10.40.0.0/24`. It has not been deployed.
+- **Decision needed:** if it was deployed anywhere with `10.20.0.0/24`, keep that and move whichever network isn't deployed yet.
+
+### B-032 Flux credentials for GitLab
+- `az-aks` `gitOps` takes a repository URL only; it has no field for HTTPS credentials. A private GitLab repository needs a deploy token in the Flux configuration's protected settings.
+- **Default:** documented as a manual step in the az-gitlab README (bootstrap step 7).
+- **Decision needed:** whether to add a Key Vault-backed credential option to `gitOpsType`.
+
+### B-033 Not verified
+- No what-if or deployment was run (no az CLI login).
+- Grafana dashboard metric names come from GitLab's and Gitaly's documented metrics. They weren't checked against a running instance.
+- The Entra OIDC provider arguments (`uid_field: oid`, `pkce`, `client_auth_method: query`) follow GitLab's OpenID Connect docs for Microsoft Entra ID and weren't tested.
+- The restore commands in the az-gitlab README (`backup-utility --restore -t`) follow the chart docs and weren't run.
+- Settings files (`clusters/*/gitlab-settings.yaml`, `cluster-settings.yaml`) contain placeholders until deployment.
+- The registry FQDNs behind `charts.gitlab.io` (`gitlab-charts.s3.amazonaws.com`) come from the chart repository's redirects, observed once.
+
+## Phase 8: docs and tests
+
+### B-034 Hub diagram image
+- **What was asked:** remove `hub-architecture.png` from the root README.
+- **Default:** removed the image from the root README, which now relies on the Mermaid diagrams. The file stays because `az-landing-zone/README.md` still shows it.
+- **Decision needed:** whether to delete the file and replace it in the landing zone README with a Mermaid diagram as well.
+
+### B-035 Snapshot limits
+- `bicep snapshot` can't evaluate some AVM conditions offline (for example, the VM module's domain join extension shows up for Entra-joined hosts too), so tests assert distinguishing properties. A snapshot is still a prediction, not a what-if against Azure.
+- `az-landing-zone` stays skipped by the snapshot check (its DNS zone loop depends on `environment()`).

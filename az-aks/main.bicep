@@ -5,7 +5,16 @@ targetScope = 'subscription'
 
 import { environmentType, hubReferenceType, lockFor, monitoringReferenceType, tagsType } from '../modules/shared/types.bicep'
 import { compactName, regionShortNames } from '../modules/shared/naming.bicep'
-import { accessType, aksMonitoringType, aksNetworkType, clusterType, gitOpsType, nodePoolType } from 'types.bicep'
+import {
+  accessType
+  aksAddonsType
+  aksMonitoringType
+  aksNetworkType
+  clusterType
+  gitOpsType
+  nodePoolType
+  registryCacheRuleType
+} from 'types.bicep'
 
 // ---------------------------------------------------------------------------
 // Parameters
@@ -56,6 +65,12 @@ param gitOps gitOpsType?
 @description('Optional. Monitoring options.')
 param aksMonitoring aksMonitoringType = {}
 
+@description('Optional. Artifact cache rules on the registry, so nodes pull upstream images through it instead of through the firewall (D-020).')
+param registryCacheRules registryCacheRuleType[] = []
+
+@description('Optional. Cluster add-ons with an Azure side (AKS Backup, image verification and external-dns identities), all off by default.')
+param addons aksAddonsType = {}
+
 @description('Optional. Enable AVM usage telemetry.')
 param enableTelemetry bool = true
 
@@ -96,6 +111,7 @@ var roleIds = {
   privateDnsZoneContributor: 'b12aa53e-6015-4669-85d0-8515ebb3ae7f'
   managedIdentityOperator: 'f1a07417-d97a-45cb-824c-7a7467783830'
   acrPull: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+  reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   aksRbacClusterAdmin: 'b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b'
   aksRbacReader: '7f6c6a51-bcf8-42ba-9220-52d62157d7db'
@@ -110,7 +126,7 @@ func groupRole(principalId string, roleId string) object => {
 }
 
 @description('Converts a node pool parameter to the managed cluster agent pool shape.')
-func agentPool(pool nodePoolType, mode string, subnetId string, defaultZones int[], tags object) object => {
+func agentPool(pool nodePoolType, mode string, subnetIds object, defaultZones int[], tags object) object => {
   name: pool.name
   mode: mode
   vmSize: pool.vmSize
@@ -127,7 +143,7 @@ func agentPool(pool nodePoolType, mode string, subnetId string, defaultZones int
   availabilityZones: pool.?availabilityZones ?? defaultZones
   enableEncryptionAtHost: true
   enableNodePublicIP: false
-  vnetSubnetResourceId: subnetId
+  vnetSubnetResourceId: subnetIds[pool.?subnetName ?? 'snet-aks-nodes']
   nodeLabels: pool.?nodeLabels
   // The system pool only runs critical add-ons; workloads go to user pools.
   nodeTaints: mode == 'System' ? ['CriticalAddonsOnly=true:NoSchedule'] : pool.?nodeTaints
@@ -201,46 +217,58 @@ module spoke '../modules/network/spoke-network/main.bicep' = {
     location: location
     addressPrefixes: network.addressPrefixes
     hub: hub
-    subnets: [
-      {
-        name: 'snet-aks-nodes'
-        addressPrefix: network.nodeSubnetPrefix
-      }
-      {
-        name: 'snet-private-endpoints'
-        addressPrefix: network.privateEndpointSubnetPrefix
-        routeToFirewall: false
-        securityRules: [
-          {
-            name: 'allow-nodes-https'
-            properties: {
-              access: 'Allow'
-              direction: 'Inbound'
-              priority: 100
-              protocol: 'Tcp'
-              sourceAddressPrefix: network.nodeSubnetPrefix
-              sourcePortRange: '*'
-              destinationAddressPrefix: network.privateEndpointSubnetPrefix
-              destinationPortRange: '443'
-            }
-          }
-          {
-            name: 'allow-hub-https'
-            properties: {
-              access: 'Allow'
-              direction: 'Inbound'
-              priority: 110
-              protocol: 'Tcp'
-              sourceAddressPrefix: 'VirtualNetwork'
-              sourcePortRange: '*'
-              destinationAddressPrefix: network.privateEndpointSubnetPrefix
-              destinationPortRange: '443'
-              description: 'Operators and pipelines reach the registry, vault and Grafana from peered networks.'
-            }
-          }
-        ]
-      }
-    ]
+    subnets: concat(
+      [
+        {
+          name: 'snet-aks-nodes'
+          addressPrefix: network.nodeSubnetPrefix
+        }
+      ],
+      map(additionalNodeSubnets, n => { name: n.name, addressPrefix: n.addressPrefix }),
+      map(
+        network.?vmSubnets ?? [],
+        v => { name: v.name, addressPrefix: v.addressPrefix, securityRules: v.?securityRules }
+      ),
+      [
+        {
+          name: 'snet-private-endpoints'
+          addressPrefix: network.privateEndpointSubnetPrefix
+          routeToFirewall: false
+          securityRules: concat(
+            [
+              {
+                name: 'allow-nodes-https'
+                properties: {
+                  access: 'Allow'
+                  direction: 'Inbound'
+                  priority: 100
+                  protocol: 'Tcp'
+                  sourceAddressPrefix: network.nodeSubnetPrefix
+                  sourcePortRange: '*'
+                  destinationAddressPrefix: network.privateEndpointSubnetPrefix
+                  destinationPortRange: '443'
+                }
+              }
+              {
+                name: 'allow-hub-https'
+                properties: {
+                  access: 'Allow'
+                  direction: 'Inbound'
+                  priority: 110
+                  protocol: 'Tcp'
+                  sourceAddressPrefix: 'VirtualNetwork'
+                  sourcePortRange: '*'
+                  destinationAddressPrefix: network.privateEndpointSubnetPrefix
+                  destinationPortRange: '443'
+                  description: 'Operators and pipelines reach the registry, vault and Grafana from peered networks.'
+                }
+              }
+            ],
+            network.?privateEndpointSecurityRules ?? []
+          )
+        }
+      ]
+    )
     // UDR outbound needs the control plane to manage the subnet and route table.
     roleAssignments: [
       {
@@ -296,23 +324,26 @@ module dnsZoneAccess 'br/public:avm/ptn/authorization/resource-role-assignment:0
 }
 
 // IP Groups for this spoke's subnets, also usable by other workloads' rules (ipGroupResourceIds output).
-var ipGroupNames = {
-  nodes: '${baseName}-ipg-nodes'
-  privateEndpoints: '${baseName}-ipg-private-endpoints'
-}
-var ipGroupAddresses = {
-  nodes: [network.nodeSubnetPrefix]
-  privateEndpoints: [network.privateEndpointSubnetPrefix]
-}
-var ipGroupResourceIds = {
-  nodes: resourceId(subscription().subscriptionId, rgNames.network, 'Microsoft.Network/ipGroups', ipGroupNames.nodes)
-  privateEndpoints: resourceId(
-    subscription().subscriptionId,
-    rgNames.network,
-    'Microsoft.Network/ipGroups',
-    ipGroupNames.privateEndpoints
-  )
-}
+var additionalNodeSubnets = network.?additionalNodeSubnets ?? []
+var ipGroupNames = union(
+  {
+    nodes: '${baseName}-ipg-nodes'
+    privateEndpoints: '${baseName}-ipg-private-endpoints'
+  },
+  toObject(additionalNodeSubnets, n => n.name, n => '${baseName}-ipg-${replace(n.name, 'snet-', '')}')
+)
+var ipGroupAddresses = union(
+  {
+    nodes: [network.nodeSubnetPrefix]
+    privateEndpoints: [network.privateEndpointSubnetPrefix]
+  },
+  toObject(additionalNodeSubnets, n => n.name, n => [n.addressPrefix])
+)
+var ipGroupResourceIds = toObject(
+  items(ipGroupNames),
+  g => g.key,
+  g => resourceId(subscription().subscriptionId, rgNames.network, 'Microsoft.Network/ipGroups', g.value)
+)
 
 module ipGroups 'br/public:avm/res/network/ip-group:0.4.0' = [
   for g in items(ipGroupNames): if (useFirewallIpGroups) {
@@ -333,6 +364,20 @@ module ipGroups 'br/public:avm/res/network/ip-group:0.4.0' = [
 var nodeSource = useFirewallIpGroups
   ? { sourceIpGroups: [ipGroupResourceIds.nodes] }
   : { sourceAddresses: [network.nodeSubnetPrefix] }
+
+// Every node subnet needs the AKS requirements; only snet-aks-nodes gets allowedEgressFqdns.
+var allNodeSource = useFirewallIpGroups
+  ? { sourceIpGroups: concat([ipGroupResourceIds.nodes], map(additionalNodeSubnets, n => ipGroupResourceIds[n.name])) }
+  : { sourceAddresses: concat([network.nodeSubnetPrefix], map(additionalNodeSubnets, n => n.addressPrefix)) }
+
+var additionalSubnetEgress = map(filter(additionalNodeSubnets, n => !empty(n.?allowedEgressFqdns ?? [])), n => {
+  ruleType: 'ApplicationRule'
+  name: 'egress-${replace(n.name, 'snet-', '')}'
+  protocols: [{ protocolType: 'Https', port: 443 }]
+  sourceIpGroups: useFirewallIpGroups ? [ipGroupResourceIds[n.name]] : null
+  sourceAddresses: useFirewallIpGroups ? null : [n.addressPrefix]
+  targetFqdns: n.allowedEgressFqdns
+})
 
 var firewallPolicySegments = split(firewallPolicyResourceId, '/')
 var loginHost = replace(replace(az.environment().authentication.loginEndpoint, 'https://', ''), '/', '')
@@ -356,7 +401,7 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
             ruleType: 'NetworkRule'
             name: 'azure-monitor'
             ipProtocols: ['TCP']
-            ...nodeSource
+            ...allNodeSource
             destinationAddresses: ['AzureMonitor']
             destinationPorts: ['443']
           }
@@ -373,14 +418,14 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
               ruleType: 'ApplicationRule'
               name: 'aks-fqdn-tag'
               protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-              ...nodeSource
+              ...allNodeSource
               fqdnTags: ['AzureKubernetesService']
             }
             {
               ruleType: 'ApplicationRule'
               name: 'aks-addons'
               protocols: [{ protocolType: 'Https', port: 443 }]
-              ...nodeSource
+              ...allNodeSource
               targetFqdns: [
                 // Azure Policy, Defender, Flux and Entra token endpoints.
                 'data.policy.${az.environment().suffixes.storage}'
@@ -403,7 +448,8 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
                   ...nodeSource
                   targetFqdns: allowedEgressFqdns
                 }
-              ]
+              ],
+          additionalSubnetEgress
         )
       }
     ]
@@ -432,6 +478,7 @@ module registry 'br/public:avm/res/container-registry/registry:0.13.1' = {
     zoneRedundancy: isProd ? 'Enabled' : 'Disabled'
     retentionPolicyStatus: 'enabled'
     retentionPolicyDays: 30
+    cacheRules: registryCacheRules
     privateEndpoints: [
       {
         name: '${registryName}-pe'
@@ -458,8 +505,10 @@ module registry 'br/public:avm/res/container-registry/registry:0.13.1' = {
 // Cluster
 // ---------------------------------------------------------------------------
 
-var nodeSubnetId = spoke.outputs.subnetResourceIds['snet-aks-nodes']
+var subnetIds = spoke.outputs.subnetResourceIds
 var gitOpsEnabled = !empty(gitOps) && (gitOps.?enabled ?? true)
+// A second cluster in the same environment (for example workload "tools") gets its own entry point.
+var clusterDirectory = workload == 'aks' ? environment : '${workload}-${environment}'
 
 module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.14.0' = {
   name: '${uniqueString(deployment().name, location)}-aks'
@@ -515,8 +564,8 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.14.
     outboundType: 'userDefinedRouting'
     loadBalancerSku: 'standard'
 
-    primaryAgentPoolProfiles: [agentPool(cluster.systemPool, 'System', nodeSubnetId, defaultZones, tags)]
-    agentPools: map(cluster.?userPools ?? [], p => agentPool(p, 'User', nodeSubnetId, defaultZones, tags))
+    primaryAgentPoolProfiles: [agentPool(cluster.systemPool, 'System', subnetIds, defaultZones, tags)]
+    agentPools: map(cluster.?userPools ?? [], p => agentPool(p, 'User', subnetIds, defaultZones, tags))
     autoScalerProfile: {
       'balance-similar-node-groups': 'true'
       expander: 'least-waste'
@@ -619,7 +668,7 @@ module managedCluster 'br/public:avm/res/container-service/managed-cluster:0.14.
               }
               kustomizations: {
                 cluster: {
-                  path: gitOps.?clusterPath ?? './az-aks/gitops/clusters/${environment}'
+                  path: gitOps.?clusterPath ?? './az-aks/gitops/clusters/${clusterDirectory}'
                   prune: true
                   syncIntervalInSeconds: 600
                   timeoutInSeconds: 600
@@ -713,6 +762,131 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.2' = {
 }
 
 // ---------------------------------------------------------------------------
+// Optional add-ons (off by default)
+// ---------------------------------------------------------------------------
+
+var backupEnabled = addons.?backup.?enabled ?? false
+var externalDnsZones = addons.?externalDnsZoneNames ?? []
+
+// No lock on this group: Azure Backup deletes expired snapshots here.
+module backupResourceGroup 'br/public:avm/res/resources/resource-group:0.4.4' = if (backupEnabled) {
+  name: '${uniqueString(deployment().name, location)}-rg-backup'
+  params: {
+    name: '${baseName}-backup-rg'
+    location: location
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+}
+
+module aksBackup '../modules/aks/backup/main.bicep' = if (backupEnabled) {
+  name: '${uniqueString(deployment().name, location)}-aks-backup'
+  scope: resourceGroup('${baseName}-backup-rg')
+  params: {
+    baseName: baseName
+    location: location
+    clusterName: clusterName
+    clusterResourceGroupName: rgNames.cluster
+    clusterPrincipalId: controlPlaneIdentity.outputs.principalId
+    privateEndpointSubnetResourceId: spoke.outputs.subnetResourceIds['snet-private-endpoints']
+    blobPrivateDnsZoneResourceId: '${dnsZoneRg}/providers/Microsoft.Network/privateDnsZones/privatelink.blob.${az.environment().suffixes.storage}'
+    retentionDays: addons.?backup.?retentionDays ?? (isProd ? 14 : 7)
+    backupTime: addons.?backup.?backupTime ?? '02:00'
+    vaultRedundancy: isProd ? 'ZoneRedundant' : 'LocallyRedundant'
+    diagnosticSettings: diagnosticSettings
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [backupResourceGroup, managedCluster]
+}
+
+module imageVerificationIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = if (addons.?imageVerification ?? false) {
+  name: '${uniqueString(deployment().name, location)}-id-kyverno'
+  scope: resourceGroup(rgNames.cluster)
+  params: {
+    name: '${baseName}-id-image-verification'
+    location: location
+    federatedIdentityCredentials: [
+      {
+        name: 'kyverno-admission-controller'
+        issuer: managedCluster.outputs.oidcIssuerUrl!
+        subject: 'system:serviceaccount:kyverno:kyverno-admission-controller'
+        audiences: ['api://AzureADTokenExchange']
+      }
+    ]
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+}
+
+module imageVerificationPull 'br/public:avm/ptn/authorization/resource-role-assignment:0.1.2' = if (addons.?imageVerification ?? false) {
+  name: '${uniqueString(deployment().name, location)}-ra-kyverno'
+  scope: resourceGroup(rgNames.cluster)
+  params: {
+    resourceId: resourceId(
+      subscription().subscriptionId,
+      rgNames.cluster,
+      'Microsoft.ContainerRegistry/registries',
+      registryName
+    )
+    #disable-next-line what-if-short-circuiting
+    principalId: imageVerificationIdentity!.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: roleIds.acrPull
+    enableTelemetry: enableTelemetry
+  }
+  dependsOn: [registry]
+}
+
+module externalDnsIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = if (!empty(externalDnsZones)) {
+  name: '${uniqueString(deployment().name, location)}-id-external-dns'
+  scope: resourceGroup(rgNames.cluster)
+  params: {
+    name: '${baseName}-id-external-dns'
+    location: location
+    federatedIdentityCredentials: [
+      {
+        name: 'external-dns'
+        issuer: managedCluster.outputs.oidcIssuerUrl!
+        subject: 'system:serviceaccount:external-dns:external-dns'
+        audiences: ['api://AzureADTokenExchange']
+      }
+    ]
+    tags: tags
+    enableTelemetry: enableTelemetry
+  }
+}
+
+module externalDnsZoneAccess 'br/public:avm/ptn/authorization/resource-role-assignment:0.1.2' = [
+  for (zone, i) in externalDnsZones: {
+    name: '${uniqueString(deployment().name, location)}-ra-edns-${i}'
+    scope: resourceGroup(dnsZoneRgSegments[2], dnsZoneRgSegments[4])
+    params: {
+      resourceId: '${dnsZoneRg}/providers/Microsoft.Network/privateDnsZones/${zone}'
+      #disable-next-line what-if-short-circuiting
+      principalId: externalDnsIdentity!.outputs.principalId
+      principalType: 'ServicePrincipal'
+      roleDefinitionId: roleIds.privateDnsZoneContributor
+      enableTelemetry: enableTelemetry
+    }
+  }
+]
+
+// external-dns lists zones in the resource group, which needs Reader on it.
+module externalDnsZoneReader 'br/public:avm/ptn/authorization/resource-role-assignment:0.1.2' = if (!empty(externalDnsZones)) {
+  name: '${uniqueString(deployment().name, location)}-ra-edns-rg'
+  scope: resourceGroup(dnsZoneRgSegments[2], dnsZoneRgSegments[4])
+  params: {
+    resourceId: dnsZoneRg
+    #disable-next-line what-if-short-circuiting
+    principalId: externalDnsIdentity!.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: roleIds.reader
+    enableTelemetry: enableTelemetry
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Monitoring
 // ---------------------------------------------------------------------------
 
@@ -776,5 +950,35 @@ output monitorWorkspaceResourceId string = clusterMonitoring.outputs.monitorWork
 @description('Resource ID of Managed Grafana.')
 output grafanaResourceId string = clusterMonitoring.outputs.grafanaResourceId
 
-@description('Resource IDs of the firewall IP Groups (nodes, privateEndpoints), empty when useFirewallIpGroups is false.')
+@description('Resource IDs of the firewall IP Groups (nodes, privateEndpoints and one per additional node subnet, keyed by subnet name), empty when useFirewallIpGroups is false.')
 output ipGroupResourceIds object = useFirewallIpGroups ? ipGroupResourceIds : {}
+
+@description('Resource ID of the container registry.')
+output registryResourceId string = registry.outputs.resourceId
+
+@description('Resource ID of the workload key vault.')
+output keyVaultResourceId string = keyVault.outputs.resourceId
+
+@description('Resource ID of the spoke virtual network.')
+output virtualNetworkResourceId string = spoke.outputs.resourceId
+
+@description('Subnet resource IDs keyed by subnet name.')
+output subnetResourceIds object = spoke.outputs.subnetResourceIds
+
+@description('Resource group of the spoke network.')
+output networkResourceGroupName string = rgNames.network
+
+@description('Client IDs of the add-on identities (imageVerification, externalDns), empty when off.')
+output addonClientIds object = {
+  imageVerification: (addons.?imageVerification ?? false) ? imageVerificationIdentity!.outputs.clientId : ''
+  externalDns: !empty(externalDnsZones) ? externalDnsIdentity!.outputs.clientId : ''
+}
+
+@description('AKS Backup vault and policy, empty when addons.backup is off (scripts/new-backup-instance.sh).')
+output backup object = backupEnabled
+  ? {
+      vaultResourceId: aksBackup!.outputs.backupVaultResourceId
+      policyResourceId: aksBackup!.outputs.backupPolicyResourceId
+      snapshotResourceGroupName: aksBackup!.outputs.snapshotResourceGroupName
+    }
+  : {}

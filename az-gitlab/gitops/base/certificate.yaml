@@ -1,0 +1,22 @@
+# TLS for the web, registry and agent hosts from the platform internal CA (az-aks). Clients
+# trust it through the CA certificate distributed with the AVD image and to CI jobs.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitlab-tls
+  namespace: gitlab
+spec:
+  secretName: gitlab-tls
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - gitlab.${GITLAB_DOMAIN}
+    - registry.${GITLAB_DOMAIN}
+    - kas.${GITLAB_DOMAIN}
+  issuerRef:
+    kind: ClusterIssuer
+    name: platform-internal

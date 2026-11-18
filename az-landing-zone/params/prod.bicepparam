@@ -47,3 +47,11 @@ param enableDdosProtection = false
 
 // Emergency access accounts (governance/scripts/New-BreakGlassAccounts.ps1): Sev 0 alerts on any use.
 // param breakGlassAccountObjectIds = ['<break-glass-01-object-id>', '<break-glass-02-object-id>']
+
+// GitLab (az-gitlab): its internal zone, and the PostgreSQL and Azure Managed Redis private
+// endpoint zones. Spokes resolve them through the firewall DNS proxy.
+param additionalPrivateDnsZones = [
+  'git.example.internal'
+  'privatelink.postgres.database.azure.com'
+  'privatelink.redis.azure.net'
+]

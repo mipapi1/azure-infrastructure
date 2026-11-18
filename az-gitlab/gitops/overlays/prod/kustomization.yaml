@@ -1,0 +1,17 @@
+# Prod: Gitaly on the VM (az-gitlab gitaly.mode VirtualMachine) instead of the StatefulSet.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - gitaly-vm-endpoint.yaml
+patches:
+  - path: gitlab-values.yaml
+  - target:
+      group: azmonitoring.coreos.com
+      kind: ServiceMonitor
+      name: gitlab-gitaly
+    patch: |
+      - op: replace
+        path: /spec/selector/matchLabels
+        value:
+          app.kubernetes.io/name: gitaly-vm

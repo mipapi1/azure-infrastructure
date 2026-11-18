@@ -44,6 +44,29 @@ param network = {
   addressPrefixes: ['10.120.0.0/23']
   nodeSubnetPrefix: '10.120.0.0/24'
   privateEndpointSubnetPrefix: '10.120.1.0/27'
+  // Shared-cluster GitLab (az-gitlab staging): CI nodes get their own subnet and allowlist.
+  additionalNodeSubnets: [
+    {
+      name: 'snet-aks-runners'
+      addressPrefix: '10.120.1.64/26'
+      allowedEgressFqdns: []
+    }
+  ]
+  privateEndpointSecurityRules: [
+    {
+      name: 'deny-runners-data-services'
+      properties: {
+        access: 'Deny'
+        direction: 'Inbound'
+        priority: 200
+        protocol: 'Tcp'
+        sourceAddressPrefix: '10.120.1.64/26'
+        sourcePortRange: '*'
+        destinationAddressPrefix: '10.120.1.0/27'
+        destinationPortRanges: ['5432', '6379', '10000']
+      }
+    }
+  ]
 }
 
 param cluster = {
@@ -60,6 +83,26 @@ param cluster = {
       vmSize: 'Standard_D4ds_v5'
       minCount: 1
       maxCount: 3
+    }
+    // Shared-cluster GitLab (az-gitlab staging). Both pools scale from zero, so they cost
+    // nothing until GitLab is deployed.
+    {
+      name: 'gitlab'
+      vmSize: 'Standard_D4ds_v5'
+      minCount: 0
+      maxCount: 3
+      nodeLabels: { 'platform.workload': 'gitlab' }
+      nodeTaints: ['workload=gitlab:NoSchedule']
+    }
+    {
+      name: 'runners'
+      vmSize: 'Standard_D4ds_v5'
+      minCount: 0
+      maxCount: 3
+      subnetName: 'snet-aks-runners'
+      nodeLabels: { 'platform.workload': 'ci' }
+      nodeTaints: ['workload=ci:NoSchedule']
+      spot: true
     }
   ]
 }

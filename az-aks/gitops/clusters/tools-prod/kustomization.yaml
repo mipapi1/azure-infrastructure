@@ -1,0 +1,9 @@
+# Entry point for the prod tools cluster (az-aks workload tools). The Flux extension applies
+# this directory: the shared platform controllers, then GitLab. No application workloads.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster-settings.yaml
+  - gitlab-settings.yaml
+  - infrastructure.yaml
+  - gitlab.yaml

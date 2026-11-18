@@ -7,6 +7,7 @@ using '../main.bicep'
 //
 // Values in <angle brackets> and the all-zero subscription ID are placeholders.
 // Take hub, monitoring and firewall values from the az-landing-zone outputs.
+// expect-property: microsoft.compute/virtualmachines/extensions type=AADLoginForWindows
 
 var hubSub = '00000000-0000-0000-0000-000000000000'
 var hubPrefix = '/subscriptions/${hubSub}/resourceGroups/hub-staging-eus'
