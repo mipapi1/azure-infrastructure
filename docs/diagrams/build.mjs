@@ -6,6 +6,7 @@
 //   class a,b net        nodes        (gov, sec, net, data, obs, ci, muted)
 //   class hub z-sec      subgraphs    (z-gov, z-sec, z-net, z-data, z-obs, z-ci)
 // The classDefs themselves are appended here, per theme, so the sources stay readable.
+// Shapes keep a plain fill: the hand-drawn hatching is stripped after rendering.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,6 +80,15 @@ svg{font-family:${fontFamily};}
 .cluster-label .nodeLabel, .cluster-label span{font-size:18px;}`;
 }
 
+// Mermaid's hand-drawn look always fills shapes with rough.js hachure (diagonal strokes in the
+// fill colour), subgraphs included. Drop those strokes so shapes stay plain, with a coloured sketchy border.
+function stripHatching(file, t) {
+  const fills = new Set([t.cluster, ...Object.values(t.hues).map(([fill]) => fill)]);
+  const svg = readFileSync(file, 'utf8').replace(/<path fill="none" stroke="(#[0-9a-f]{3,6})"[^>]*\/>/g,
+    (m, stroke) => (fills.has(stroke) ? '' : m));
+  writeFileSync(file, svg);
+}
+
 const src = join(here, 'src');
 const files = readdirSync(src).filter((f) => f.endsWith('.mmd') && (!only.length || only.includes(basename(f, '.mmd'))));
 const work = mkdtempSync(join(tmpdir(), 'diagrams-'));
@@ -103,6 +113,7 @@ try {
         ['-q', '-i', input, '-o', out, '-c', cfg, '-C', cssFile, '-p', puppeteer, '-b', 'transparent'],
         { stdio: 'inherit' });
       execFileSync(join(here, 'node_modules/.bin/svgo'), ['-q', '--config', join(here, 'svgo.config.cjs'), out], { stdio: 'inherit' });
+      stripHatching(out, t);
       if (process.env.PREVIEW) {
         execFileSync(join(here, 'node_modules/.bin/mmdc'),
           ['-q', '-i', input, '-o', join(work, `${name}.${themeName}.png`), '-c', cfg, '-C', cssFile, '-p', puppeteer,

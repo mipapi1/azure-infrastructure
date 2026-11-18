@@ -4,7 +4,7 @@ The hand-drawn diagrams in the READMEs are rendered from the Mermaid sources in 
 
 ## Colours
 
-Every node gets one semantic class, so a colour means the same thing in every diagram. The palette matches the resume site.
+Every node gets one semantic class, so a colour means the same thing in every diagram. The palette matches the resume site. The colour is on the border only: `build.mjs` strips the diagonal hatching that Mermaid's hand-drawn look puts inside shapes, so they stay plain.
 
 | Class | Colour | Use for |
 |---|---|---|
