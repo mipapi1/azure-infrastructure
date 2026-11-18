@@ -1,0 +1,45 @@
+flowchart TB
+  subgraph mg["Management groups (governance)"]
+    direction LR
+    plat[Platform] --- lz[Landing zones] --- sbx[Sandbox]
+  end
+  subgraph hub["Hub subscription (az-landing-zone)"]
+    afw[Azure Firewall<br/>DNS proxy, IDPS on Premium]
+    bas[Bastion]
+    gw[VPN / ER gateway<br/>optional]
+    dns[(Private DNS zones)]
+    mon[(Log Analytics, Sentinel<br/>DCE, DCRs, AMPLS)]
+  end
+  subgraph avd["AVD spoke (az-avd)"]
+    hosts[Session hosts] --- fsl[(FSLogix<br/>Azure Files)]
+  end
+  subgraph aks["AKS spoke (az-aks)"]
+    cluster[Private AKS] --- acr[(Registry)]
+    cluster --- kv[(Key Vault)]
+  end
+  subgraph tools["Tools spoke (az-aks tools-prod + az-gitlab)"]
+    tcluster[Tools AKS<br/>GitLab, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
+    tcluster --- gitaly[Gitaly VM]
+  end
+  subgraph aib["Image Builder (az-image-builder)"]
+    gal[(Compute Gallery)]
+  end
+  avd <-->|peering, UDR 0/0| afw
+  aks <-->|peering, UDR 0/0| afw
+  tools <-->|peering, UDR 0/0| afw
+  gal -.->|session host image| hosts
+  avd & aks & tools -.->|diagnostics, metrics| mon
+  hosts -.->|443, 22 via firewall| tcluster
+  git[(Hosted Git)] -->|Flux| tcluster
+  tcluster -->|Flux after bootstrap| cluster
+
+  class plat,lz,sbx gov
+  class afw,bas,gw,kv sec
+  class hosts,cluster net
+  class dns,fsl,acr,tdata,gal data
+  class mon obs
+  class tcluster,gitaly,git ci
+  class mg z-gov
+  class hub z-sec
+  class avd,aks z-net
+  class tools,aib z-ci

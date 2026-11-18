@@ -18,62 +18,25 @@ Bicep for an Azure platform built on [Azure Verified Modules (AVM)](https://azur
 
 ## Architecture
 
-```mermaid
-flowchart TB
-  subgraph mg["Management groups (governance)"]
-    direction LR
-    plat[Platform] --- lz[Landing zones] --- sbx[Sandbox]
-  end
-  subgraph hub["Hub subscription (az-landing-zone)"]
-    afw[Azure Firewall<br/>DNS proxy, IDPS on Premium]
-    bas[Bastion]
-    gw[VPN / ER gateway<br/>optional]
-    dns[(Private DNS zones)]
-    mon[(Log Analytics, Sentinel<br/>DCE, DCRs, AMPLS)]
-  end
-  subgraph avd["AVD spoke (az-avd)"]
-    hosts[Session hosts] --- fsl[(FSLogix<br/>Azure Files)]
-  end
-  subgraph aks["AKS spoke (az-aks)"]
-    cluster[Private AKS] --- acr[(Registry)]
-    cluster --- kv[(Key Vault)]
-  end
-  subgraph tools["Tools spoke (az-aks tools-prod + az-gitlab)"]
-    tcluster[Tools AKS<br/>GitLab, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
-    tcluster --- gitaly[Gitaly VM]
-  end
-  subgraph aib["Image Builder (az-image-builder)"]
-    gal[(Compute Gallery)]
-  end
-  avd <-->|peering, UDR 0/0| afw
-  aks <-->|peering, UDR 0/0| afw
-  tools <-->|peering, UDR 0/0| afw
-  gal -.->|session host image| hosts
-  avd & aks & tools -.->|diagnostics, metrics| mon
-  hosts -.->|443, 22 via firewall| tcluster
-  git[(Hosted Git)] -->|Flux| tcluster
-  tcluster -->|Flux after bootstrap| cluster
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/platform-overview.dark.svg">
+  <img alt="Platform overview: management groups, hub, spokes, image builder, and traffic between them" src="docs/diagrams/platform-overview.light.svg">
+</picture>
+</p>
+
+<sub>🟨 governance &nbsp; 🟥 security and edge &nbsp; 🟦 network and compute &nbsp; 🟩 data and storage &nbsp; 🟪 monitoring &nbsp; 🟧 CI/CD and images. Sources and build: <a href="docs/diagrams">docs/diagrams</a>.</sub>
 
 All egress from spokes goes through the hub firewall, which also resolves the hub's private DNS zones for the spokes. PaaS services are reached through private endpoints; monitoring ingestion goes through the private link scope. GitLab is internal only: AVD session hosts and VPN or ExpressRoute clients reach it through the firewall on 443 and 22. The tools cluster follows hosted Git, so GitLab can be rebuilt without GitLab; the application cluster moves to GitLab once it runs ([az-gitlab](az-gitlab/README.md#bootstrap-order)).
 
 ## Which folders do I need?
 
-```mermaid
-flowchart TD
-  start([New environment]) --> gov{Own the management<br/>group hierarchy?}
-  gov -->|yes| g[Deploy governance]
-  gov -->|no, policy managed elsewhere| hub
-  g --> hub[Deploy az-landing-zone]
-  hub --> img{Need custom or<br/>STIG-hardened images?}
-  img -->|yes| aib[Deploy az-image-builder]
-  img -->|no| wl
-  aib --> wl{Workload?}
-  wl -->|Virtual desktops| avd[Deploy az-avd]
-  wl -->|Containers| aks[Deploy az-aks] --> apps[Push az-apps manifests<br/>Flux deploys them]
-  wl -->|Source control and CI| tools[Deploy az-aks tools-prod] --> gl[Deploy az-gitlab]
-  wl -->|Something else| spoke[Compose modules/network/spoke-network<br/>with AVM modules]
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/deploy-decision.dark.svg">
+  <img alt="Deployment decision flow: which stacks to deploy for a new environment" src="docs/diagrams/deploy-decision.light.svg">
+</picture>
+</p>
 
 ## Deployment order
 

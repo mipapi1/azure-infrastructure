@@ -3,3 +3,4 @@ checkov.sarif
 *.swp
 .DS_Store
 *.snapshot.json
+node_modules/

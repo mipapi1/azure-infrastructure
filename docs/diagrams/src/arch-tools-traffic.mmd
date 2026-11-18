@@ -1,0 +1,29 @@
+flowchart LR
+  subgraph hub["Hub (az-landing-zone)"]
+    afw[Azure Firewall<br/>IP Groups, DNS proxy]
+    zones[(Private DNS zones<br/>incl. GitLab, postgres, redis)]
+  end
+  subgraph avd["AVD spoke"]
+    hosts[Session hosts<br/>Entra or domain joined]
+    prof[(FSLogix<br/>Azure Files or Cloud Cache blob)]
+  end
+  subgraph app["Application AKS spoke"]
+    appaks[Application cluster]
+  end
+  subgraph tools["Tools spoke"]
+    toolsaks[Tools cluster<br/>gitlab pool, runner pool]
+    data[(PostgreSQL, Managed Redis,<br/>Blob, Registry)]
+    gvm[Gitaly VM]
+  end
+  hosts -->|443, 22 from the session host IP Group| afw --> toolsaks
+  appaks -->|Flux over 443| afw
+  toolsaks --- data & gvm
+  hosts --- prof
+
+  class afw sec
+  class zones,prof,data data
+  class hosts,appaks net
+  class toolsaks,gvm ci
+  class hub z-sec
+  class avd,app z-net
+  class tools z-ci

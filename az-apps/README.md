@@ -2,18 +2,12 @@
 
 How workloads get onto the `az-aks` clusters: a Helm chart with the platform defaults, namespace guardrails, a build pipeline that scans and signs images, and promotion by digest through GitOps.
 
-```mermaid
-flowchart LR
-  dev[Commit to az-apps/src] --> build[Build + SBOM + provenance]
-  build --> scan[Trivy scan<br/>fail on fixable HIGH/CRITICAL]
-  scan --> push[Push to private ACR<br/>OIDC, no secrets]
-  push --> sign[cosign keyless sign]
-  sign --> prs[PR: digest -> values-staging.yaml]
-  prs -->|merge| flux1[Flux deploys staging]
-  sign --> gate{prod approval}
-  gate --> prp[PR: digest -> values-prod.yaml]
-  prp -->|merge| flux2[Flux deploys prod]
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/diagrams/apps-supply-chain.dark.svg">
+  <img alt="Supply chain: build, scan, push, sign, then Flux deploys staging and prod" src="../docs/diagrams/apps-supply-chain.light.svg">
+</picture>
+</p>
 
 ## Layout
 

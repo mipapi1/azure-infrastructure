@@ -1,0 +1,17 @@
+flowchart LR
+  dev[Commit to az-apps/src] --> build[Build + SBOM + provenance]
+  build --> scan[Trivy scan<br/>fail on fixable HIGH/CRITICAL]
+  scan --> push[Push to private ACR<br/>OIDC, no secrets]
+  push --> sign[cosign keyless sign]
+  sign --> prs[PR: digest -> values-staging.yaml]
+  prs -->|merge| flux1[Flux deploys staging]
+  sign --> gate{prod approval}
+  gate --> prp[PR: digest -> values-prod.yaml]
+  prp -->|merge| flux2[Flux deploys prod]
+
+  class dev muted
+  class build,prs,prp ci
+  class scan,sign sec
+  class push data
+  class gate gov
+  class flux1,flux2 net

@@ -1,0 +1,37 @@
+flowchart LR
+  subgraph hub["Hub (az-landing-zone)"]
+    afw[Azure Firewall]
+    dns[(Private DNS zones)]
+    law[(Log Analytics)]
+    dce[DCE + AMPLS]
+  end
+  subgraph spoke["AKS spoke VNet"]
+    subgraph nodes["snet-aks-nodes"]
+      sys[System pool<br/>CriticalAddonsOnly]
+      usr[User pools]
+    end
+    subgraph pe["snet-private-endpoints"]
+      peacr[PE registry]
+      pekv[PE key vault]
+      peamw[PE monitor workspace]
+      peamg[PE Grafana]
+    end
+  end
+  api[Private API server] --- nodes
+  nodes -->|0.0.0.0/0 UDR| afw
+  nodes --> peacr --> acr[(Container Registry)]
+  nodes --> pekv --> kv[(Key Vault)]
+  nodes -->|Prometheus metrics| dce --> amw[(Azure Monitor workspace)]
+  nodes -->|Container Insights| dce --> law
+  amg[Managed Grafana] -->|managed PE| amw
+  git[(Git repository)] -->|Flux| nodes
+
+  class afw,kv sec
+  class dns,acr data
+  class law,dce,amw,amg obs
+  class sys,usr,api net
+  class peacr,pekv,peamw,peamg muted
+  class git ci
+  class hub z-sec
+  class spoke,nodes z-net
+  class pe z-data

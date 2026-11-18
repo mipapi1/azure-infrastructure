@@ -2,35 +2,12 @@
 
 A private AKS cluster on a spoke of the landing zone, with its registry, workload key vault, Managed Prometheus, Managed Grafana, Container Insights and Flux GitOps. One deployment of `main.bicep` is one cluster.
 
-```mermaid
-flowchart LR
-  subgraph hub["Hub (az-landing-zone)"]
-    afw[Azure Firewall]
-    dns[(Private DNS zones)]
-    law[(Log Analytics)]
-    dce[DCE + AMPLS]
-  end
-  subgraph spoke["AKS spoke VNet"]
-    subgraph nodes["snet-aks-nodes"]
-      sys[System pool<br/>CriticalAddonsOnly]
-      usr[User pools]
-    end
-    subgraph pe["snet-private-endpoints"]
-      peacr[PE registry]
-      pekv[PE key vault]
-      peamw[PE monitor workspace]
-      peamg[PE Grafana]
-    end
-  end
-  api[Private API server] --- nodes
-  nodes -->|0.0.0.0/0 UDR| afw
-  nodes --> peacr --> acr[(Container Registry)]
-  nodes --> pekv --> kv[(Key Vault)]
-  nodes -->|Prometheus metrics| dce --> amw[(Azure Monitor workspace)]
-  nodes -->|Container Insights| dce --> law
-  amg[Managed Grafana] -->|managed PE| amw
-  git[(Git repository)] -->|Flux| nodes
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/diagrams/aks-spoke.dark.svg">
+  <img alt="AKS spoke: node pools, private endpoints, monitoring, and egress through the hub firewall" src="../docs/diagrams/aks-spoke.light.svg">
+</picture>
+</p>
 
 ## What it deploys
 

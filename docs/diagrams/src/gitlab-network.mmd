@@ -1,0 +1,46 @@
+flowchart LR
+  subgraph clients["Clients"]
+    avd[AVD session hosts]
+    vpn[VPN / ExpressRoute]
+    app[Application cluster Flux]
+  end
+  subgraph hub["Hub"]
+    afw[Azure Firewall<br/>DNS proxy]
+    zone[(git.example.internal<br/>private DNS zone)]
+  end
+  subgraph tools["Tools spoke 10.30.0.0/22"]
+    subgraph nodes["snet-aks-nodes"]
+      ilb[Internal LB :443<br/>NGINX nginx-gitlab]
+      ssh[Internal LB :22<br/>gitlab-shell]
+      gl[GitLab pool<br/>webservice, sidekiq, registry, KAS]
+    end
+    subgraph runners["snet-aks-runners"]
+      jobs[Runner pool<br/>tainted workload=ci]
+    end
+    subgraph gitaly["snet-gitaly"]
+      gvm[Gitaly VM]
+    end
+    subgraph pe["snet-private-endpoints"]
+      pg[(PostgreSQL)]
+      redis[(Managed Redis)]
+      blob[(Blob storage)]
+      acr[(Registry)]
+    end
+  end
+  clients -->|443, 22| afw --> ilb & ssh
+  afw -.resolves.- zone
+  ilb --> gl
+  ssh --> gl
+  gl --> gvm
+  gl --> pg & redis & blob
+  jobs -->|443| ilb
+  jobs --> acr
+
+  class avd,vpn,app,ilb,ssh net
+  class afw sec
+  class zone,pg,redis,blob,acr data
+  class gl,jobs,gvm ci
+  class clients z-net
+  class hub z-sec
+  class tools,nodes,runners,gitaly z-ci
+  class pe z-data

@@ -7,45 +7,12 @@ This folder has two parts:
 - `main.bicep` (subscription scope) deploys the Azure side: data services, identities, the Gitaly VM, DNS records and hub firewall rules.
 - `gitops/` holds the cluster side (namespaced resources only), which the cluster's Flux reconciles. It reuses the platform's External Secrets Operator, cert-manager issuer and Flux; it doesn't install its own.
 
-```mermaid
-flowchart LR
-  subgraph clients["Clients"]
-    avd[AVD session hosts]
-    vpn[VPN / ExpressRoute]
-    app[Application cluster Flux]
-  end
-  subgraph hub["Hub"]
-    afw[Azure Firewall<br/>DNS proxy]
-    zone[(git.example.internal<br/>private DNS zone)]
-  end
-  subgraph tools["Tools spoke 10.30.0.0/22"]
-    subgraph nodes["snet-aks-nodes"]
-      ilb[Internal LB :443<br/>NGINX nginx-gitlab]
-      ssh[Internal LB :22<br/>gitlab-shell]
-      gl[GitLab pool<br/>webservice, sidekiq, registry, KAS]
-    end
-    subgraph runners["snet-aks-runners"]
-      jobs[Runner pool<br/>tainted workload=ci]
-    end
-    subgraph gitaly["snet-gitaly"]
-      gvm[Gitaly VM]
-    end
-    subgraph pe["snet-private-endpoints"]
-      pg[(PostgreSQL)]
-      redis[(Managed Redis)]
-      blob[(Blob storage)]
-      acr[(Registry)]
-    end
-  end
-  clients -->|443, 22| afw --> ilb & ssh
-  afw -.resolves.- zone
-  ilb --> gl
-  ssh --> gl
-  gl --> gvm
-  gl --> pg & redis & blob
-  jobs -->|443| ilb
-  jobs --> acr
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/diagrams/gitlab-network.dark.svg">
+  <img alt="GitLab network path: clients through the hub firewall to the tools spoke" src="../docs/diagrams/gitlab-network.light.svg">
+</picture>
+</p>
 
 ## What it deploys
 

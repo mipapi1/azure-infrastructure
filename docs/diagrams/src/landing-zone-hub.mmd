@@ -1,0 +1,32 @@
+flowchart TB
+  subgraph mg["Management groups (governance/)"]
+    root[alz] --> platform[alz-platform]
+    root --> lzs[alz-landingzones]
+    root --> sandbox[alz-sandbox]
+    root --> decom[alz-decommissioned]
+    platform --> conn[connectivity]
+    platform --> ident[identity]
+    platform --> mgmt[management]
+    lzs --> corp[corp]
+    lzs --> online[online]
+  end
+  subgraph hub["Hub subscription (main.bicep)"]
+    vnet[Hub VNet] --- afw[Azure Firewall<br/>DNS proxy]
+    vnet --- bas[Bastion]
+    vnet --- vgw[VPN / ER gateway<br/>optional]
+    vnet --- pe[Private endpoints<br/>AMPLS, Key Vault]
+    dns[(Private DNS zones)] -.linked.- vnet
+    law[(Log Analytics)] --- ampls[AMPLS]
+    dce[DCE + VM DCRs] --- ampls
+  end
+  spoke1[AVD spoke] <-->|peering, UDR 0/0 to firewall| vnet
+  spoke2[AKS spoke] <-->|peering, UDR 0/0 to firewall| vnet
+
+  class root,platform,lzs,sandbox,conn,ident,mgmt,corp,online gov
+  class decom muted
+  class vnet,pe,spoke1,spoke2 net
+  class afw,bas,vgw sec
+  class dns data
+  class law,ampls,dce obs
+  class mg z-gov
+  class hub z-sec

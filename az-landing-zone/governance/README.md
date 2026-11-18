@@ -2,18 +2,12 @@
 
 Management group hierarchy, subscription placement and baseline policy assignments, deployed at management group scope (normally the tenant root group or a dedicated intermediate root). Deploy it before `az-landing-zone/main.bicep`.
 
-```mermaid
-flowchart TD
-  root[Intermediate root] --> platform[Platform]
-  root --> landingzones[Landing zones]
-  root --> sandbox[Sandbox]
-  root --> decommissioned[Decommissioned]
-  platform --> connectivity[Connectivity]
-  platform --> management[Management]
-  platform --> identity[Identity]
-  landingzones --> corp[Corp]
-  landingzones --> online[Online]
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/diagrams/mg-hierarchy.dark.svg">
+  <img alt="Management group hierarchy" src="../../docs/diagrams/mg-hierarchy.light.svg">
+</picture>
+</p>
 
 The staging parameter file deploys a parallel canary hierarchy (prefix `alz-canary`) with assignments in `DoNotEnforce`, so policy changes are tried there before prod. Baseline assignments are Microsoft built-ins: Microsoft cloud security benchmark, allowed locations, required and inherited tags, diagnostic settings to the central workspace, VM monitoring, no public IPs on NICs and secure transfer for storage. See D-010 in `docs/DECISIONS.md`.
 

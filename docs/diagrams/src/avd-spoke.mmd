@@ -1,0 +1,31 @@
+flowchart LR
+  user((Users)) -->|AVD gateway| ws[Workspace]
+  ws --> dag[Desktop app group]
+  ws --> rag[RemoteApp groups]
+  dag --> hp[Host pool<br/>pooled, BreadthFirst]
+  rag --> hp
+  sp[Scaling plan] --> hp
+  subgraph spoke["AVD spoke VNet"]
+    subgraph hosts["snet-session-hosts"]
+      vm1[Session host] & vm2[Session host] & vm3[Session host]
+    end
+    subgraph pe["snet-private-endpoints"]
+      pehp[PE host pool]
+      pews[PE feed]
+      pefs[PE Azure Files]
+    end
+  end
+  hp -.registration.- hosts
+  hosts -->|SMB 445, Entra Kerberos| pefs --> fs[(Premium file share<br/>FSLogix profiles)]
+  hosts -->|0.0.0.0/0| afw[Hub firewall]
+  hosts -->|AMA + DCR| law[(Central Log Analytics)]
+
+  class user gov
+  class ws,dag,rag,hp,sp ci
+  class vm1,vm2,vm3 net
+  class pehp,pews,pefs muted
+  class fs data
+  class afw sec
+  class law obs
+  class spoke,hosts z-net
+  class pe z-data

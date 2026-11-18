@@ -6,7 +6,7 @@ DOCKER_RUN       = docker run --rm --platform $(PLATFORM) -v "$(CURDIR)":/src -w
 TOOLS            = $(DOCKER_RUN) $(IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help tools validate build lint format format-check psrule snapshot deployments scan k8s rendered docs docs-check smoke
+.PHONY: help tools validate build lint format format-check psrule snapshot deployments scan k8s rendered docs docs-check smoke diagrams
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -54,6 +54,9 @@ docs: ## Regenerate parameter tables in module READMEs
 
 docs-check: ## Fail if a README parameter table is out of date
 	$(TOOLS) python3 tooling/gen-docs.py --check
+
+diagrams: ## Render docs/diagrams/src/*.mmd to hand-drawn light/dark SVGs (runs on the host: Node + Chrome)
+	cd docs/diagrams && npm ci --silent && node build.mjs
 
 smoke: ## Deploy the sample app to a local kind cluster and smoke test it
 	docker run --rm --platform $(PLATFORM) --user 0 -e SMOKE_KEEP -v /var/run/docker.sock:/var/run/docker.sock -v "$(CURDIR)":/src -w /src $(IMAGE) az-apps/tests/smoke.sh

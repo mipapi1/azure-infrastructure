@@ -4,31 +4,12 @@ This document records the audit of the repository before the platform build-out 
 
 ## 1. Current state (audit)
 
-```mermaid
-flowchart LR
-  subgraph sub["Subscription scope"]
-    subgraph lz["az-landing-zone (hub)"]
-      rg[Resource groups x4]
-      uami[Managed identities]
-      vnet[Hub VNet<br/>Firewall / Bastion / Gateway / PE subnets]
-      afw[Azure Firewall + policy]
-      bas[Bastion]
-      dns[Private DNS zones]
-      law[Log Analytics]
-      ampls[AMPLS + private endpoint]
-    end
-    subgraph aib["az-image-builder"]
-      aiblz[Landing zone<br/>VNet, storage, identities, gallery, roles]
-      aibwl[Workload<br/>image definitions + templates]
-    end
-    avd["az-avd<br/>(placeholder files only)"]
-  end
-  vnet --> afw
-  vnet --> bas
-  law --> ampls
-  dns --> ampls
-  aiblz --> aibwl
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/arch-subscription.dark.svg">
+  <img alt="Subscription-scope resources per stack" src="diagrams/arch-subscription.light.svg">
+</picture>
+</p>
 
 ### az-landing-zone
 
@@ -85,40 +66,21 @@ See [CONVENTIONS.md](CONVENTIONS.md) for the full list. In short:
 
 The target platform is described in the root [README](../README.md) and in each module's README once built. The deployment order is:
 
-```mermaid
-flowchart TD
-  mg["az-landing-zone/governance<br/>management groups + policy"] --> hub["az-landing-zone<br/>connectivity + management"]
-  hub --> aib["az-image-builder<br/>(optional custom images)"]
-  hub --> avd["az-avd<br/>spoke + AVD"]
-  hub --> aks["az-aks<br/>spoke + AKS"]
-  hub --> tools["az-aks (tools-prod)<br/>tools spoke + AKS"]
-  aib -.-> avd
-  aks --> apps["az-apps<br/>workloads on AKS"]
-  tools --> gitlab["az-gitlab<br/>GitLab, data services, runners"]
-  gitlab -.Flux source after bootstrap.-> aks
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/arch-deploy-order.dark.svg">
+  <img alt="Deployment order and dependencies between stacks" src="diagrams/arch-deploy-order.light.svg">
+</picture>
+</p>
 
 ## 4. State after the build-out
 
-```mermaid
-flowchart LR
-  subgraph tenant["Management group scope"]
-    gov["governance<br/>MG hierarchy, policy, canary"]
-  end
-  subgraph hubsub["Hub subscription"]
-    hub["az-landing-zone<br/>firewall, Bastion, DNS, monitoring, KV, budgets, Defender"]
-    aib["az-image-builder"]
-  end
-  subgraph wl["Workload subscriptions"]
-    avd["az-avd<br/>spoke + AVD"]
-    aks["az-aks<br/>spoke + private AKS"]
-  end
-  apps["az-apps<br/>Helm + Flux"]
-  gov --> hub --> avd & aks
-  aib -.image.-> avd
-  aks --> apps
-  shared["modules/<br/>naming, types, spoke, firewall rules, AVD, AKS"] -.-> hub & avd & aks
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/arch-scopes.dark.svg">
+  <img alt="Stacks by deployment scope" src="diagrams/arch-scopes.light.svg">
+</picture>
+</p>
 
 | Audit gap | Resolution |
 |---|---|
@@ -139,29 +101,12 @@ Not yet covered, by design or pending: `what-if` against a real subscription (ne
 
 ## 5. Platform hardening
 
-```mermaid
-flowchart LR
-  subgraph hub["Hub (az-landing-zone)"]
-    afw[Azure Firewall<br/>IP Groups, DNS proxy]
-    zones[(Private DNS zones<br/>incl. GitLab, postgres, redis)]
-  end
-  subgraph avd["AVD spoke"]
-    hosts[Session hosts<br/>Entra or domain joined]
-    prof[(FSLogix<br/>Azure Files or Cloud Cache blob)]
-  end
-  subgraph app["Application AKS spoke"]
-    appaks[Application cluster]
-  end
-  subgraph tools["Tools spoke"]
-    toolsaks[Tools cluster<br/>gitlab pool, runner pool]
-    data[(PostgreSQL, Managed Redis,<br/>Blob, Registry)]
-    gvm[Gitaly VM]
-  end
-  hosts -->|443, 22 from the session host IP Group| afw --> toolsaks
-  appaks -->|Flux over 443| afw
-  toolsaks --- data & gvm
-  hosts --- prof
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/arch-tools-traffic.dark.svg">
+  <img alt="Traffic from AVD hosts and the application cluster to the tools spoke" src="diagrams/arch-tools-traffic.light.svg">
+</picture>
+</p>
 
 | Area | What changed | Decision |
 |---|---|---|

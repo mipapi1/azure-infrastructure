@@ -1,0 +1,20 @@
+flowchart TD
+  start([New environment]) --> gov{Own the management<br/>group hierarchy?}
+  gov -->|yes| g[Deploy governance]
+  gov -->|no, policy managed elsewhere| hub
+  g --> hub[Deploy az-landing-zone]
+  hub --> img{Need custom or<br/>STIG-hardened images?}
+  img -->|yes| aib[Deploy az-image-builder]
+  img -->|no| wl
+  aib --> wl{Workload?}
+  wl -->|Virtual desktops| avd[Deploy az-avd]
+  wl -->|Containers| aks[Deploy az-aks] --> apps[Push az-apps manifests<br/>Flux deploys them]
+  wl -->|Source control and CI| tools[Deploy az-aks tools-prod] --> gl[Deploy az-gitlab]
+  wl -->|Something else| spoke[Compose modules/network/spoke-network<br/>with AVM modules]
+
+  class start muted
+  class gov,img,wl gov
+  class g gov
+  class hub sec
+  class aib,apps,gl ci
+  class avd,aks,tools,spoke net

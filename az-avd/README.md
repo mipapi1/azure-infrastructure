@@ -2,29 +2,12 @@
 
 A complete AVD workload on top of the landing zone: spoke network, host pool, application groups, workspace, scaling plan, FSLogix profile storage, session hosts and monitoring. Each deployment of `main.bicep` is one host pool; deploy it again with a different `workload` name for more pools.
 
-```mermaid
-flowchart LR
-  user((Users)) -->|AVD gateway| ws[Workspace]
-  ws --> dag[Desktop app group]
-  ws --> rag[RemoteApp groups]
-  dag --> hp[Host pool<br/>pooled, BreadthFirst]
-  rag --> hp
-  sp[Scaling plan] --> hp
-  subgraph spoke["AVD spoke VNet"]
-    subgraph hosts["snet-session-hosts"]
-      vm1[Session host] & vm2[Session host] & vm3[Session host]
-    end
-    subgraph pe["snet-private-endpoints"]
-      pehp[PE host pool]
-      pews[PE feed]
-      pefs[PE Azure Files]
-    end
-  end
-  hp -.registration.- hosts
-  hosts -->|SMB 445, Entra Kerberos| pefs --> fs[(Premium file share<br/>FSLogix profiles)]
-  hosts -->|0.0.0.0/0| afw[Hub firewall]
-  hosts -->|AMA + DCR| law[(Central Log Analytics)]
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/diagrams/avd-spoke.dark.svg">
+  <img alt="AVD: workspace, host pool, session hosts, FSLogix, and egress" src="../docs/diagrams/avd-spoke.light.svg">
+</picture>
+</p>
 
 ## Prerequisites
 

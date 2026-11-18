@@ -9,31 +9,12 @@ The platform layer every workload attaches to. It has two deployments:
 
 ![Hub architecture](hub-architecture.png)
 
-```mermaid
-flowchart TB
-  subgraph mg["Management groups (governance/)"]
-    root[alz] --> platform[alz-platform]
-    root --> lzs[alz-landingzones]
-    root --> sandbox[alz-sandbox]
-    root --> decom[alz-decommissioned]
-    platform --> conn[connectivity]
-    platform --> ident[identity]
-    platform --> mgmt[management]
-    lzs --> corp[corp]
-    lzs --> online[online]
-  end
-  subgraph hub["Hub subscription (main.bicep)"]
-    vnet[Hub VNet] --- afw[Azure Firewall<br/>DNS proxy]
-    vnet --- bas[Bastion]
-    vnet --- vgw[VPN / ER gateway<br/>optional]
-    vnet --- pe[Private endpoints<br/>AMPLS, Key Vault]
-    dns[Private DNS zones] -.linked.- vnet
-    law[Log Analytics] --- ampls[AMPLS]
-    dce[DCE + VM DCRs] --- ampls
-  end
-  spoke1[AVD spoke] <-->|peering, UDR 0/0 to firewall| vnet
-  spoke2[AKS spoke] <-->|peering, UDR 0/0 to firewall| vnet
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/diagrams/landing-zone-hub.dark.svg">
+  <img alt="Management groups and hub subscription resources with peered spokes" src="../docs/diagrams/landing-zone-hub.light.svg">
+</picture>
+</p>
 
 ## Deploy
 

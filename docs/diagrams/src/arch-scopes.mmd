@@ -1,0 +1,26 @@
+flowchart LR
+  subgraph tenant["Management group scope"]
+    gov["governance<br/>MG hierarchy, policy, canary"]
+  end
+  subgraph hubsub["Hub subscription"]
+    hub["az-landing-zone<br/>firewall, Bastion, DNS, monitoring, KV, budgets, Defender"]
+    aib["az-image-builder"]
+  end
+  subgraph wl["Workload subscriptions"]
+    avd["az-avd<br/>spoke + AVD"]
+    aks["az-aks<br/>spoke + private AKS"]
+  end
+  apps["az-apps<br/>Helm + Flux"]
+  gov --> hub --> avd & aks
+  aib -.image.-> avd
+  aks --> apps
+  shared["modules/<br/>naming, types, spoke, firewall rules, AVD, AKS"] -.-> hub & avd & aks
+
+  class gov gov
+  class hub sec
+  class aib,apps ci
+  class avd,aks net
+  class shared muted
+  class tenant z-gov
+  class hubsub z-sec
+  class wl z-net
