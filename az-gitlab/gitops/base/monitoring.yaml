@@ -79,7 +79,6 @@ spec:
       path: /metrics
       interval: 30s
 ---
-# In-cluster Gitaly. The prod overlay replaces the selector with the Gitaly VM endpoint.
 apiVersion: azmonitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

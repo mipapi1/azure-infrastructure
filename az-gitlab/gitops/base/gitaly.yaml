@@ -1,0 +1,27 @@
+# Cluster-scoped objects for the Gitaly StatefulSet (D-033). Gitaly on Kubernetes is generally
+# available from GitLab 18.11 for sharded (non-Cluster) Gitaly; each pod is the only copy of its
+# repositories, so these keep it from moving and keep its disk.
+#
+# Zone-redundant premium disk: the pod can be rescheduled to a node in another zone and still
+# attach its volume. Retain keeps the disk if the PVC is deleted (restore by binding a new PV).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gitaly-premium-zrs
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: Premium_ZRS
+  cachingMode: ReadOnly
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+# Gitaly is scheduled before, and preempted after, every other GitLab component.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: gitlab-gitaly
+value: 1000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: Gitaly (Git repository storage). Evicting it makes its repositories unavailable.

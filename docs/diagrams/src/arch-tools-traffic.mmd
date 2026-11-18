@@ -11,9 +11,9 @@ flowchart LR
     appaks[Application cluster]
   end
   subgraph tools["Tools spoke"]
-    toolsaks[Tools cluster<br/>gitlab pool, runner pool]
+    toolsaks[Tools cluster<br/>gitlab, gitaly and runner pools]
     data[(PostgreSQL, Managed Redis,<br/>Blob, Registry)]
-    gvm[Gitaly VM]
+    gvm[(Gitaly disk<br/>Premium ZRS)]
   end
   hosts -->|443, 22 from the session host IP Group| afw --> toolsaks
   appaks -->|Flux over 443| afw
@@ -21,9 +21,9 @@ flowchart LR
   hosts --- prof
 
   class afw sec
-  class zones,prof,data data
+  class zones,prof,data,gvm data
   class hosts,appaks net
-  class toolsaks,gvm ci
+  class toolsaks ci
   class hub z-sec
   class avd,app z-net
   class tools z-ci

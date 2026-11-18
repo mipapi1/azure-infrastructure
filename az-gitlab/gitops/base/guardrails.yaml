@@ -52,7 +52,7 @@ spec:
         memory: 4Gi
 ---
 # Ingress to GitLab only from the ingress controller, the runner manager, CI jobs (git clone,
-# API, registry) and inside the namespace. Gitaly on a VM is outside the cluster.
+# API, registry) and inside the namespace (which includes Gitaly).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

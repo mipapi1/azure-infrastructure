@@ -25,9 +25,6 @@ type clusterReferenceType = {
   @description('Optional. Node subnet of the runner pool. Defaults to snet-aks-runners.')
   runnerSubnetName: string?
 
-  @description('Optional. Subnet for the Gitaly VM (gitaly.mode VirtualMachine). Defaults to snet-gitaly.')
-  gitalySubnetName: string?
-
   @description('Optional. Private endpoint subnet. Defaults to snet-private-endpoints.')
   privateEndpointSubnetName: string?
 }
@@ -102,31 +99,10 @@ type gitlabRedisType = {
 }
 
 @export()
-@description('Gitaly (Git repository storage).')
+@description('Gitaly (Git repository storage). Gitaly runs in the cluster as the chart\'s StatefulSet (D-033).')
 type gitalyType = {
-  @description('Optional. StatefulSet (Gitaly in the cluster on premium disks, the default in staging) or VirtualMachine (GitLab\'s recommended production layout, the default in prod).')
-  mode: ('StatefulSet' | 'VirtualMachine')?
-
   @description('Optional. Repository disk size in GB. Defaults to 256 (prod) or 64 (staging).')
   diskSizeGB: int?
-
-  @description('Optional. VirtualMachine: VM size. Defaults to Standard_D4ds_v5.')
-  vmSize: string?
-
-  @description('Conditional. VirtualMachine: static private IP in the Gitaly subnet. The chart values point at it.')
-  privateIp: string?
-
-  @description('Optional. VirtualMachine: PEM certificate of the CA that signs the GitLab certificate (the platform internal CA from cert-manager), so Gitaly trusts its callbacks. Set it after the first cluster sync.')
-  trustedCaPem: string?
-
-  @description('Optional. VirtualMachine: availability zone, -1 for none. Defaults to 1 in prod and none in staging.')
-  zone: (-1 | 1 | 2 | 3)?
-
-  @description('Conditional. VirtualMachine: SSH public key of the break-glass admin. Day-to-day access is Entra ID SSH through Bastion.')
-  adminSshPublicKey: string?
-
-  @description('Optional. VirtualMachine: GitLab package version to install on the Gitaly VM, for example 19.4.3-ee.0. It must match the chart\'s GitLab version.')
-  packageVersion: string?
 }
 
 @export()

@@ -17,7 +17,6 @@ data:
   STORAGE_ACCOUNT: "<storage-account>"
   STORAGE_DOMAIN: blob.core.windows.net
   STORAGE_REALM: core.windows.net
-  GITALY_ADDRESS: ""
   GITALY_DISK_SIZE: 64Gi
   BACKUP_SCHEDULE: "0 3 * * 0"
   RUNNER_CONCURRENT: "4"

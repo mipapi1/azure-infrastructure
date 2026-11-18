@@ -42,7 +42,6 @@ param cluster = {
   subnetResourceIds: {
     'snet-aks-nodes': '${toolsNetwork}/snet-aks-nodes'
     'snet-aks-runners': '${toolsNetwork}/snet-aks-runners'
-    'snet-gitaly': '${toolsNetwork}/snet-gitaly'
     'snet-private-endpoints': '${toolsNetwork}/snet-private-endpoints'
   }
 }
@@ -59,15 +58,10 @@ param dns = {
 // them from the environment, or replace with
 // az.getSecret('<subscription-id>', 'tools-prod-eus-rg', '<tools-key-vault-name>', '<secret>').
 param postgresAdministratorPassword = readEnvironmentVariable('GITLAB_POSTGRES_PASSWORD', '')
-param gitalyAuthToken = readEnvironmentVariable('GITLAB_GITALY_TOKEN', '')
-param gitlabShellSecret = readEnvironmentVariable('GITLAB_SHELL_SECRET', '')
 
+// Gitaly runs in the cluster on the dedicated gitaly pool (az-aks/params/tools-prod.bicepparam).
 param gitaly = {
-  mode: 'VirtualMachine'
-  privateIp: '10.30.2.68'
   diskSizeGB: 512
-  adminSshPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceh gitaly-break-glass'
-  packageVersion: '19.4.3-ee.0'
 }
 
 // AVD users and the application cluster (Flux) reach GitLab; VPN or ExpressRoute ranges too.

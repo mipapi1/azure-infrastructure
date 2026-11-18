@@ -1,7 +1,7 @@
 using '../main.bicep'
 
 // Shared-cluster mode: GitLab on tainted pools of the staging application cluster
-// (az-aks/params/staging.bicepparam, pools gitlab and runners), Gitaly as a StatefulSet.
+// (az-aks/params/staging.bicepparam, pools gitlab and runners), Gitaly on the gitlab pool.
 // Cheaper, but GitLab shares the cluster, its upgrades and its failure domain with the
 // applications, so the staging cluster's Flux must keep following the hosted Git provider.
 // Values in <angle brackets> and the all-zero subscription ID are placeholders.
@@ -56,7 +56,6 @@ param dns = {
 param postgresAdministratorPassword = readEnvironmentVariable('GITLAB_POSTGRES_PASSWORD', '')
 
 param gitaly = {
-  mode: 'StatefulSet'
   diskSizeGB: 64
 }
 

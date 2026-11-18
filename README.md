@@ -11,7 +11,7 @@ Bicep for an Azure platform built on [Azure Verified Modules (AVM)](https://azur
 | [`az-image-builder`](az-image-builder) | Subscription | Isolated Image Builder environment and STIG-hardened Windows and Linux images in a Compute Gallery |
 | [`az-avd`](az-avd) | Subscription | AVD spoke, host pool, application groups, workspace, scaling plan, FSLogix on Azure Files with Entra Kerberos, session hosts, AVD Insights and alerts |
 | [`az-aks`](az-aks) | Subscription | AKS spoke, private cluster (Entra RBAC, CNI Overlay with Cilium, workload identity), registry, key vault, Managed Prometheus and Grafana, Flux GitOps, optional AKS Backup. Also builds the tools cluster for GitLab (`params/tools-prod.bicepparam`) |
-| [`az-gitlab`](az-gitlab) | Subscription + Kubernetes | Internal GitLab on the tools cluster: PostgreSQL, Managed Redis and Blob Storage on private endpoints, Gitaly VM, DNS records, firewall rules, and the Flux manifests for GitLab and its runners |
+| [`az-gitlab`](az-gitlab) | Subscription + Kubernetes | Internal GitLab on the tools cluster: PostgreSQL, Managed Redis and Blob Storage on private endpoints, in-cluster Gitaly, DNS records, firewall rules, and the Flux manifests for GitLab and its runners |
 | [`az-apps`](az-apps) | Kubernetes | Hardened Helm chart, namespace guardrails, Flux releases, CI that builds, scans, signs and promotes images by digest |
 | [`modules`](modules) | | Shared modules: naming, types, spoke network, firewall rule collection group, AVD, AKS, GitLab and governance building blocks |
 | [`docs`](docs) | | [Architecture](docs/ARCHITECTURE.md), [conventions](docs/CONVENTIONS.md), [decision log](docs/DECISIONS.md) |

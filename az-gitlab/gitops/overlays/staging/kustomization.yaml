@@ -1,4 +1,4 @@
-# Staging: shared cluster, Gitaly StatefulSet (base), fewer replicas.
+# Staging: shared cluster, Gitaly on the gitlab pool (base), fewer replicas.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

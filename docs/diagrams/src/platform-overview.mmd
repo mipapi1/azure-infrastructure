@@ -18,8 +18,7 @@ flowchart TB
     cluster --- kv[(Key Vault)]
   end
   subgraph tools["Tools spoke (az-aks tools-prod + az-gitlab)"]
-    tcluster[Tools AKS<br/>GitLab, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
-    tcluster --- gitaly[Gitaly VM]
+    tcluster[Tools AKS<br/>GitLab, Gitaly, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
   end
   subgraph aib["Image Builder (az-image-builder)"]
     gal[(Compute Gallery)]
@@ -38,7 +37,7 @@ flowchart TB
   class hosts,cluster net
   class dns,fsl,acr,tdata,gal data
   class mon obs
-  class tcluster,gitaly,git ci
+  class tcluster,git ci
   class mg z-gov
   class hub z-sec
   class avd,aks z-net

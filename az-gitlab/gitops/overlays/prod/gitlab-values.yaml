@@ -5,16 +5,23 @@ metadata:
   namespace: gitlab
 spec:
   values:
-    global:
-      gitaly:
-        enabled: false
-        external:
-          - name: default
-            hostname: ${GITALY_ADDRESS}
-            port: "8075"
     gitlab:
       webservice:
         minReplicas: 3
+      # Gitaly gets the gitaly pool to itself (one Standard_D8ds_v5 node), so other pods can't
+      # compete for its CPU, memory or disk throughput.
       gitaly:
-        persistence:
-          enabled: false
+        nodeSelector:
+          platform.workload: gitaly
+        tolerations:
+          - key: workload
+            operator: Equal
+            value: gitaly
+            effect: NoSchedule
+        resources:
+          requests:
+            cpu: "6"
+            memory: 24Gi
+          limits:
+            cpu: "6"
+            memory: 24Gi

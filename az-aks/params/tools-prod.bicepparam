@@ -61,40 +61,6 @@ param network = {
       allowedEgressFqdns: []
     }
   ]
-  vmSubnets: [
-    {
-      name: 'snet-gitaly'
-      addressPrefix: '10.30.2.64/28'
-      securityRules: [
-        {
-          name: 'allow-gitlab-nodes-gitaly'
-          properties: {
-            access: 'Allow'
-            direction: 'Inbound'
-            priority: 100
-            protocol: 'Tcp'
-            sourceAddressPrefix: '10.30.0.0/24'
-            sourcePortRange: '*'
-            destinationAddressPrefix: '10.30.2.64/28'
-            destinationPortRanges: ['8075', '9236']
-          }
-        }
-        {
-          name: 'deny-runners'
-          properties: {
-            access: 'Deny'
-            direction: 'Inbound'
-            priority: 200
-            protocol: '*'
-            sourceAddressPrefix: '10.30.1.0/24'
-            sourcePortRange: '*'
-            destinationAddressPrefix: '10.30.2.64/28'
-            destinationPortRange: '*'
-          }
-        }
-      ]
-    }
-  ]
   // CI jobs reach the registry and vault endpoints (443) but never the database or cache.
   privateEndpointSecurityRules: [
     {
@@ -131,6 +97,16 @@ param cluster = {
       nodeTaints: ['workload=gitlab:NoSchedule']
     }
     {
+      // Gitaly alone on one node (az-gitlab prod overlay). Its disk is zone-redundant, so the
+      // pod can come back on a node in any zone.
+      name: 'gitaly'
+      vmSize: 'Standard_D8ds_v5'
+      minCount: 1
+      maxCount: 1
+      nodeLabels: { 'platform.workload': 'gitaly' }
+      nodeTaints: ['workload=gitaly:NoSchedule']
+    }
+    {
       name: 'runners'
       vmSize: 'Standard_D4ds_v5'
       minCount: 0
@@ -161,3 +137,9 @@ param registryCacheRules = [
   { name: 'trivy', sourceRepository: 'ghcr.io/aquasecurity/trivy', targetRepository: 'cache/aquasecurity/trivy' }
   { name: 'cosign', sourceRepository: 'ghcr.io/sigstore/cosign/cosign', targetRepository: 'cache/sigstore/cosign' }
 ]
+
+// Gitaly keeps the repositories on a cluster disk, so AKS Backup snapshots it daily between
+// GitLab's own backups (D-033, D-035). The backup instance is created by script (az-aks README).
+param addons = {
+  backup: { enabled: true }
+}

@@ -17,7 +17,7 @@ type nodeSubnetType = {
 }
 
 @export()
-@description('A subnet for virtual machines that belong to the cluster workload, for example a Gitaly server.')
+@description('A subnet for virtual machines that belong to the cluster workload.')
 type vmSubnetType = {
   @description('Required. Subnet name.')
   name: string

@@ -126,6 +126,6 @@ Address plan (checked by `make deployments`):
 | Hub | 10.0.0.0/22 | 10.100.0.0/22 |
 | AVD | 10.10.0.0/22 | 10.110.0.0/23, cloud-only 10.112.0.0/23 |
 | Application AKS | 10.20.0.0/22 | 10.120.0.0/23 (runner subnet 10.120.1.64/26) |
-| Tools AKS | 10.30.0.0/22: nodes /24, runners /24, private endpoints /26, Gitaly /28 | shared with application AKS |
+| Tools AKS | 10.30.0.0/22: nodes /24, runners /24, private endpoints /26 | shared with application AKS |
 | Image Builder | 10.40.0.0/24 | |
 | AKS pods and services | 192.168.0.0/16, 172.16.0.0/16 (outside every VNet) | same |

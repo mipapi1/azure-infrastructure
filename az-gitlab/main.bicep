@@ -1,5 +1,5 @@
 metadata name = 'GitLab on AKS'
-metadata description = 'Azure side of GitLab on an existing az-aks cluster: PostgreSQL flexible server, Azure Managed Redis and blob storage on private endpoints, workload identities for GitLab and CI jobs, an optional Gitaly VM, internal DNS records and hub firewall rules. The cluster side (Helm releases and secrets) is in az-gitlab/gitops and reconciled by the cluster Flux.'
+metadata description = 'Azure side of GitLab on an existing az-aks cluster: PostgreSQL flexible server, Azure Managed Redis and blob storage on private endpoints, workload identities for GitLab and CI jobs, internal DNS records and hub firewall rules. The cluster side (Helm releases and secrets) is in az-gitlab/gitops and reconciled by the cluster Flux.'
 
 targetScope = 'subscription'
 
@@ -41,7 +41,7 @@ param hub hubReferenceType
 @description('Required. Central monitoring (az-landing-zone output "monitoring").')
 param monitoring monitoringReferenceType
 
-@description('Optional. Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, client, runner and Gitaly rules are added to it.')
+@description('Optional. Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, client and runner rules are added to it.')
 param firewallPolicyResourceId string = ''
 
 @description('Required. The cluster GitLab runs on (az-aks outputs).')
@@ -60,16 +60,8 @@ param postgresAdministratorPassword string
 @description('Optional. Managed Redis settings.')
 param redis gitlabRedisType = {}
 
-@description('Optional. Gitaly placement.')
+@description('Optional. Gitaly repository storage.')
 param gitaly gitalyType = {}
-
-@description('Conditional. gitaly.mode VirtualMachine: Gitaly token (seeded in the cluster key vault).')
-@secure()
-param gitalyAuthToken string = ''
-
-@description('Conditional. gitaly.mode VirtualMachine: GitLab Shell secret (seeded in the cluster key vault).')
-@secure()
-param gitlabShellSecret string = ''
 
 @description('Optional. Who may reach GitLab through the hub firewall.')
 param access gitlabAccessType = {}
@@ -100,8 +92,6 @@ var clusterSegments = split(cluster.clusterResourceId, '/')
 var keyVaultSegments = split(cluster.keyVaultResourceId, '/')
 var keyVaultName = last(keyVaultSegments)
 
-var gitalyMode = gitaly.?mode ?? (isProd ? 'VirtualMachine' : 'StatefulSet')
-var gitalyOnVm = gitalyMode == 'VirtualMachine'
 var keycloakEnabled = keycloak.?enabled ?? false
 
 var subnets = cluster.subnetResourceIds
@@ -152,13 +142,11 @@ var containers = [
 ]
 
 // Guards that can't be expressed in the type.
-// Secrets aren't checked here (offline snapshots run without them); the Gitaly script and the
-// database deployments fail on empty values.
-var guard = gitalyOnVm && (empty(gitaly.?privateIp ?? '') || empty(gitaly.?adminSshPublicKey ?? ''))
-  ? fail('gitaly.mode VirtualMachine needs gitaly.privateIp and gitaly.adminSshPublicKey.')
-  : !empty(firewallPolicyResourceId) && !empty(runners.?pushRegistryPrivateEndpointPrefixes ?? []) && empty(runners.?runnerIpGroupResourceId ?? '') && empty(runners.?runnerSubnetPrefix ?? '')
-      ? fail('runners.pushRegistryPrivateEndpointPrefixes needs runners.runnerIpGroupResourceId or runners.runnerSubnetPrefix as the rule source.')
-      : true
+// Secrets aren't checked here (offline snapshots run without them); the database deployments
+// fail on empty values.
+var guard = !empty(firewallPolicyResourceId) && !empty(runners.?pushRegistryPrivateEndpointPrefixes ?? []) && empty(runners.?runnerIpGroupResourceId ?? '') && empty(runners.?runnerSubnetPrefix ?? '')
+  ? fail('runners.pushRegistryPrivateEndpointPrefixes needs runners.runnerIpGroupResourceId or runners.runnerSubnetPrefix as the rule source.')
+  : true
 
 // ---------------------------------------------------------------------------
 // Resource group and identities
@@ -436,35 +424,6 @@ module redisPasswordSecret 'br/public:avm/res/key-vault/vault/secret:0.1.1' = {
 }
 
 // ---------------------------------------------------------------------------
-// Gitaly VM (gitaly.mode VirtualMachine)
-// ---------------------------------------------------------------------------
-
-module gitalyVm '../modules/gitlab/gitaly-vm/main.bicep' = if (gitalyOnVm) {
-  name: '${uniqueString(deployment().name, location)}-gitaly'
-  scope: az.resourceGroup(rgName)
-  params: {
-    name: '${baseName}-gitaly'
-    location: location
-    subnetResourceId: subnets[cluster.?gitalySubnetName ?? 'snet-gitaly']
-    privateIp: gitaly.?privateIp ?? ''
-    vmSize: gitaly.?vmSize ?? 'Standard_D4ds_v5'
-    zone: gitaly.?zone ?? (isProd ? 1 : -1)
-    diskSizeGB: gitaly.?diskSizeGB ?? (isProd ? 256 : 64)
-    adminSshPublicKey: gitaly.?adminSshPublicKey ?? ''
-    packageVersion: gitaly.?packageVersion ?? '19.4.3-ee.0'
-    internalApiUrl: gitlabUrl
-    trustedCaPem: gitaly.?trustedCaPem ?? ''
-    gitalyAuthToken: gitalyAuthToken
-    gitlabShellSecret: gitlabShellSecret
-    dataCollectionRuleResourceIds: []
-    lock: lock
-    tags: tags
-    enableTelemetry: enableTelemetry
-  }
-  dependsOn: [resourceGroup]
-}
-
-// ---------------------------------------------------------------------------
 // Keycloak (optional)
 // ---------------------------------------------------------------------------
 
@@ -541,7 +500,7 @@ module dnsRecords 'br/public:avm/res/network/private-dns-zone/a:0.1.0' = [
 ]
 
 // ---------------------------------------------------------------------------
-// Hub firewall: clients to GitLab, runners to push registries, Gitaly package updates
+// Hub firewall: clients to GitLab, runners to push registries
 // ---------------------------------------------------------------------------
 
 var firewallPolicySegments = split(firewallPolicyResourceId, '/')
@@ -560,70 +519,43 @@ module firewallRules '../modules/network/firewall-rule-collection-group/main.bic
     firewallPolicyName: last(firewallPolicySegments)
     name: '${baseName}-rcg'
     priority: access.?firewallRulePriority ?? 1160
-    ruleCollections: concat(
-      hasClients || !empty(pushPrefixes)
-        ? [
-            {
-              name: 'gitlab-network'
-              ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
-              priority: 100
-              action: { type: 'Allow' }
-              rules: concat(
-                hasClients
-                  ? [
-                      {
-                        ruleType: 'NetworkRule'
-                        name: 'clients-to-gitlab'
-                        ipProtocols: ['TCP']
-                        sourceIpGroups: clientIpGroups
-                        sourceAddresses: clientPrefixes
-                        destinationAddresses: [dns.ingressIp, dns.sshIp]
-                        destinationPorts: ['443', '22']
-                      }
-                    ]
-                  : [],
-                !empty(pushPrefixes)
-                  ? [
-                      {
-                        ruleType: 'NetworkRule'
-                        name: 'runners-to-push-registries'
-                        ipProtocols: ['TCP']
-                        ...runnerSource
-                        destinationAddresses: pushPrefixes
-                        destinationPorts: ['443']
-                      }
-                    ]
-                  : []
-              )
-            }
-          ]
-        : [],
-      gitalyOnVm
-        ? [
-            {
-              name: 'gitaly-application'
-              ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
-              priority: 200
-              action: { type: 'Allow' }
-              rules: [
-                {
-                  ruleType: 'ApplicationRule'
-                  name: 'gitaly-packages'
-                  protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-                  sourceAddresses: [gitaly.?privateIp ?? '']
-                  targetFqdns: [
-                    'packages.gitlab.com'
-                    '*.packages.gitlab.com'
-                    'azure.archive.ubuntu.com'
-                    'security.ubuntu.com'
-                    'esm.ubuntu.com'
+    ruleCollections: hasClients || !empty(pushPrefixes)
+      ? [
+          {
+            name: 'gitlab-network'
+            ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
+            priority: 100
+            action: { type: 'Allow' }
+            rules: concat(
+              hasClients
+                ? [
+                    {
+                      ruleType: 'NetworkRule'
+                      name: 'clients-to-gitlab'
+                      ipProtocols: ['TCP']
+                      sourceIpGroups: clientIpGroups
+                      sourceAddresses: clientPrefixes
+                      destinationAddresses: [dns.ingressIp, dns.sshIp]
+                      destinationPorts: ['443', '22']
+                    }
                   ]
-                }
-              ]
-            }
-          ]
-        : []
-    )
+                : [],
+              !empty(pushPrefixes)
+                ? [
+                    {
+                      ruleType: 'NetworkRule'
+                      name: 'runners-to-push-registries'
+                      ipProtocols: ['TCP']
+                      ...runnerSource
+                      destinationAddresses: pushPrefixes
+                      destinationPorts: ['443']
+                    }
+                  ]
+                : []
+            )
+          }
+        ]
+      : []
   }
 }
 
@@ -655,12 +587,6 @@ output postgresUser string = postgresAdmin
 @description('Redis host name (TLS, port 10000).')
 output redisHost string = redisCache.outputs.hostName
 
-@description('Gitaly mode.')
-output gitalyMode string = gitalyMode
-
-@description('Gitaly VM address, empty for the StatefulSet mode.')
-output gitalyAddress string = gitalyOnVm ? gitalyVm!.outputs.privateIp : ''
-
 @description('Keycloak database host, empty when Keycloak is off.')
 output keycloakDatabaseHost string = keycloakEnabled ? keycloakDatabase!.outputs.?fqdn ?? '' : ''
 
@@ -683,7 +609,6 @@ output gitlabSettings object = {
   STORAGE_ACCOUNT: storage.outputs.name
   STORAGE_DOMAIN: 'blob.${az.environment().suffixes.storage}'
   STORAGE_REALM: az.environment().suffixes.storage
-  GITALY_ADDRESS: gitalyOnVm ? gitalyVm!.outputs.privateIp : ''
   GITALY_DISK_SIZE: '${gitaly.?diskSizeGB ?? (isProd ? 256 : 64)}Gi'
   BACKUP_SCHEDULE: isProd ? '0 2 * * *' : '0 3 * * 0'
   RUNNER_CONCURRENT: isProd ? '20' : '4'

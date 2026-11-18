@@ -4,8 +4,8 @@ Self-managed GitLab, internal only, on an AKS cluster from `az-aks`, with its da
 
 This folder has two parts:
 
-- `main.bicep` (subscription scope) deploys the Azure side: data services, identities, the Gitaly VM, DNS records and hub firewall rules.
-- `gitops/` holds the cluster side (namespaced resources only), which the cluster's Flux reconciles. It reuses the platform's External Secrets Operator, cert-manager issuer and Flux; it doesn't install its own.
+- `main.bicep` (subscription scope) deploys the Azure side: data services, identities, DNS records and hub firewall rules.
+- `gitops/` holds the cluster side (namespaced resources, plus the Gitaly StorageClass and PriorityClass), which the cluster's Flux reconciles. It reuses the platform's External Secrets Operator, cert-manager issuer and Flux; it doesn't install its own.
 
 <p align="center">
 <picture>
@@ -21,12 +21,12 @@ This folder has two parts:
 | Database | PostgreSQL flexible server 17, private endpoint, password and Entra auth, TLS required, `amcheck`, `btree_gist`, `pg_trgm` and `pg_stat_statements` allowed. Zone-redundant HA and 35-day backups in prod. |
 | Cache | Azure Managed Redis, TLS on port 10000, one endpoint (EnterpriseCluster policy). The access key is written to Key Vault (`gitlab-redis-password`) and never output. |
 | Object storage | One storage account, shared key access off, private endpoint, containers for artifacts, LFS, uploads, packages, MR diffs, Terraform state, secure files, dependency proxy, registry and backups. GitLab reaches it with workload identity (`gitlab` service account). |
-| Gitaly | Prod: Gitaly on a VM (Ubuntu 24.04, trusted launch, premium repository disk that outlives the VM, Entra SSH, Azure Monitor Agent) configured by a run command. Staging: Gitaly StatefulSet on premium disks. See D-033. |
+| Gitaly | The chart's Gitaly StatefulSet, set up as GitLab's Gitaly on Kubernetes guidance describes (generally available since GitLab 18.11): zone-redundant premium disk with `Retain`, its own PriorityClass, not evictable by the autoscaler, Guaranteed QoS. Prod puts it alone on the `gitaly` node pool; staging runs it on the gitlab pool. See D-033. |
 | Access | Internal only. HTTPS through a dedicated application routing NGINX controller (`nginx-gitlab`, internal LB on a fixed IP). Git over SSH through a second internal LB (the only LoadBalancer Service outside `app-routing-system`, a D-023 exception for the `gitlab` namespace). Records in a private zone linked to the hub, resolved through the firewall DNS proxy. |
-| Firewall | Clients (AVD session host IP Group, VPN or ExpressRoute ranges, the application cluster for Flux) to both LBs on 443 and 22. Runner nodes to the push registries' private endpoints on 443. Gitaly VM to the GitLab package repository. |
+| Firewall | Clients (AVD session host IP Group, VPN or ExpressRoute ranges, the application cluster for Flux) to both LBs on 443 and 22. Runner nodes to the push registries' private endpoints on 443. |
 | Runners | Kubernetes executor, jobs in `ci-jobs` on the tainted runner pool (own subnet, IP Group and an empty egress allowlist), unprivileged, `ci-job` service account with workload identity and AcrPush. Job images only from the private registry. |
 | Identity | Entra ID sign-in (OpenID Connect). Optional Keycloak (D-034). |
-| Backups | Toolbox backup CronJob to the backups container, plus Key Vault copies of the secrets backups don't contain. PostgreSQL point-in-time restore and Gitaly disk snapshots on top. |
+| Backups | Toolbox backup CronJob to the backups container, plus Key Vault copies of the secrets backups don't contain. PostgreSQL point-in-time restore and Gitaly disk snapshots (AKS Backup) on top. |
 | Monitoring | Managed Prometheus ServiceMonitors and PodMonitors (azmonitoring.coreos.com), Grafana dashboards in `gitops/dashboards`. |
 
 ## Placement
@@ -46,7 +46,7 @@ GitLab can't host the Git repository that deploys GitLab, so the tools cluster s
 
 1. **Landing zone.** Add the GitLab zone, `privatelink.postgres.database.azure.com` and `privatelink.redis.azure.net` to `additionalPrivateDnsZones` (already in the landing zone params) and redeploy.
 2. **Tools cluster.** Deploy `az-aks` with `params/tools-prod.bicepparam`. Its `gitOps.repositoryUrl` points at the hosted Git repository. Fill `clusters/tools-prod/cluster-settings.yaml` from the outputs.
-3. **Secrets.** `scripts/seed-secrets.sh <tools key vault>`, then export `GITLAB_POSTGRES_PASSWORD`, `GITLAB_GITALY_TOKEN` and `GITLAB_SHELL_SECRET` from the vault for the deployment.
+3. **Secrets.** `scripts/seed-secrets.sh <tools key vault>`, then export `GITLAB_POSTGRES_PASSWORD` from the vault for the deployment.
 4. **Azure side.** Deploy this template:
    ```bash
    az deployment sub create --location eastus --name gitlab-prod \
@@ -55,7 +55,6 @@ GitLab can't host the Git repository that deploys GitLab, so the tools cluster s
 5. **Cluster side.** `scripts/write-gitlab-settings.sh gitlab-prod tools-prod`, and `scripts/import-runner-images.sh <tools registry>`. Commit and push. Flux installs GitLab (about 20 minutes on first install).
 6. **After the first install.**
    - Run `scripts/backup-gitlab-secrets.sh <tools key vault>`.
-   - Set `gitaly.trustedCaPem` to the platform CA (`kubectl -n gitlab get secret gitlab-tls -o jsonpath='{.data.ca\.crt}' | base64 -d`) and redeploy, so the Gitaly VM trusts GitLab's certificate.
    - Sign in as root (`kubectl -n gitlab get secret gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d`), set up Entra sign-in, then block or rotate root.
    - Create the instance runner and store its token: `az keyvault secret set --vault-name <kv> -n gitlab-runner-token --value glrt-...`.
 7. **Move Flux to GitLab.** Push this repository to GitLab and create a project deploy token with `read_repository`. Then, for each cluster, change `gitOps.repositoryUrl` in its `az-aks` params to the GitLab URL and redeploy. The Flux extension takes HTTPS credentials through `configurationProtectedSettings`; put the token in Key Vault, not in the params file. The application cluster reaches GitLab through the firewall rule from its node IP Group.
@@ -90,7 +89,7 @@ Keyless cosign signing (D-022) relies on the public Sigstore Fulcio accepting th
 | Repositories, uploads, CI data | Toolbox backup CronJob (`gitlab-backup create`) to the `gitlab-backups` container; daily in prod, weekly in staging | Blob soft delete and a lifecycle rule you add for the container |
 | Object storage | Blob soft delete and versioning (prod) | 30 days prod, 7 staging |
 | Secrets the backup doesn't contain | `scripts/backup-gitlab-secrets.sh` copies the Rails secrets and SSH host keys to Key Vault | Key Vault soft delete, 90 days |
-| Gitaly VM disk (prod) | The repository disk survives VM deletion; add disk snapshots (Azure Backup for disks) if you need a recovery point between GitLab backups | |
+| Gitaly disk | The `gitaly-premium-zrs` class retains the disk if its PVC is deleted. For recovery points between GitLab backups, the AKS Backup add-on (`az-aks` `addons`, D-035) snapshots it daily; it is on in `tools-prod`, and the backup instance should cover the `gitlab` namespace | 14 days prod (backup policy) |
 
 Restore test, at least once a quarter, in staging or a scratch cluster:
 
@@ -108,7 +107,7 @@ Restore test, at least once a quarter, in staging or a scratch cluster:
 
 ## Monitoring
 
-`gitops/base/monitoring.yaml` scrapes webservice (Puma and Workhorse), sidekiq, the exporter, gitlab-shell, the registry, Gitaly and the runner manager into the cluster's Azure Monitor workspace. In prod, Gitaly on the VM is scraped through a selector-less Service. `scripts/import-dashboards.sh <grafana resource id>` imports the overview, Gitaly and runner dashboards.
+`gitops/base/monitoring.yaml` scrapes webservice (Puma and Workhorse), sidekiq, the exporter, gitlab-shell, the registry, Gitaly and the runner manager into the cluster's Azure Monitor workspace. `scripts/import-dashboards.sh <grafana resource id>` imports the overview, Gitaly and runner dashboards.
 
 ## Optional components
 
@@ -137,15 +136,13 @@ Restore test, at least once a quarter, in staging or a scratch cluster:
 | `placement` | `Dedicated` \| `Shared` | no | computed | Dedicated (prod default: a separate tools cluster in its own spoke) or Shared (staging default: tainted pools on the application cluster, to save cost). Only changes defaults and the documented trade-offs; the cluster reference decides where GitLab runs. |
 | `hub` | hubReferenceType | yes |  | Hub connection details (az-landing-zone output "hub"). The private DNS zones and the GitLab zone are in its DNS resource group. |
 | `monitoring` | monitoringReferenceType | yes |  | Central monitoring (az-landing-zone output "monitoring"). |
-| `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, client, runner and Gitaly rules are added to it. |
+| `firewallPolicyResourceId` | string | no | `""` | Hub firewall policy (az-landing-zone output firewallPolicyResourceId). When set, client and runner rules are added to it. |
 | `cluster` | clusterReferenceType | yes |  | The cluster GitLab runs on (az-aks outputs). |
 | `dns` | gitlabDnsType | yes |  | Host names and internal load balancer addresses. |
 | `postgres` | gitlabPostgresType | no | `{}` | PostgreSQL settings. |
 | `postgresAdministratorPassword` | string (secure) | yes |  | PostgreSQL administrator password. Generated by scripts/seed-secrets.sh into the cluster key vault and read with getSecret() in the parameter file. |
 | `redis` | gitlabRedisType | no | `{}` | Managed Redis settings. |
-| `gitaly` | gitalyType | no | `{}` | Gitaly placement. |
-| `gitalyAuthToken` | string (secure) | no | `""` | gitaly.mode VirtualMachine: Gitaly token (seeded in the cluster key vault). |
-| `gitlabShellSecret` | string (secure) | no | `""` | gitaly.mode VirtualMachine: GitLab Shell secret (seeded in the cluster key vault). |
+| `gitaly` | gitalyType | no | `{}` | Gitaly repository storage. |
 | `access` | gitlabAccessType | no | `{}` | Who may reach GitLab through the hub firewall. |
 | `runners` | gitlabRunnersType | no | `{}` | CI runner settings. |
 | `keycloak` | keycloakType | no | `{}` | Keycloak identity broker (off by default). |
@@ -162,8 +159,6 @@ Restore test, at least once a quarter, in staging or a scratch cluster:
 | `postgresHost` | string | PostgreSQL host name. |
 | `postgresUser` | string | PostgreSQL user GitLab connects as. |
 | `redisHost` | string | Redis host name (TLS, port 10000). |
-| `gitalyMode` | string | Gitaly mode. |
-| `gitalyAddress` | string | Gitaly VM address, empty for the StatefulSet mode. |
 | `keycloakDatabaseHost` | string | Keycloak database host, empty when Keycloak is off. |
 | `gitlabUrl` | string | GitLab URL. |
 | `clusterResourceGroupName` | string | Cluster resource group (where the Kubernetes side runs). |

@@ -110,7 +110,7 @@ The same template builds the tools cluster that hosts GitLab (`params/tools-prod
 | Option | What it adds |
 |---|---|
 | `network.additionalNodeSubnets` | More node subnets, each with its own IP Group (`<cluster>-ipg-<subnet>`) and its own firewall application rule for `allowedEgressFqdns`. A pool joins one with `subnetName`. The tools cluster puts the tainted CI runner pool in `snet-aks-runners` with an empty allowlist. |
-| `network.vmSubnets` | Subnets for VMs in the spoke (the Gitaly VM), with their own NSG rules. |
+| `network.vmSubnets` | Subnets for VMs that belong to the cluster workload, with their own NSG rules. |
 | `network.privateEndpointSecurityRules` | Extra NSG rules on the private endpoint subnet, for example to stop runner nodes reaching the database endpoints. |
 
 `registryCacheRules` adds ACR artifact cache rules (D-020), so job images come from the private registry instead of the internet. Docker Hub needs a credential set; registry.gitlab.com isn't a supported upstream, so the runner images are imported (`az-gitlab/scripts/import-runner-images.sh`).

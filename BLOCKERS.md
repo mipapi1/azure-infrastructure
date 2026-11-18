@@ -147,9 +147,11 @@ Items found while hardening the platform. Each lists what was tried, the default
 - **Default:** NGINX for now, because the platform's ingress is NGINX and cert-manager is set up for Ingress objects.
 - **Decision needed:** when to move GitLab (and the platform) to application routing with the Gateway API. The GitLab chart supports Gateway API (`global.gatewayApi`).
 
-### B-027 Gitaly VM configuration untested
-- `configure-gitaly.sh` passes `bash -n` but has not run on a VM. The Gitaly-only `gitlab.rb` follows GitLab's standalone Gitaly docs (17.5+ `gitlab_secret`).
-- `gitaly.trustedCaPem` can only be set after the first cluster sync, when the platform CA exists. Until then, Gitaly's calls back to GitLab fail TLS verification.
+### B-027 Gitaly on AKS requirements not confirmed
+- **What was found:** Gitaly on Kubernetes (sharded, non-Cluster) is generally available from GitLab 18.11 (chart 10.4.3 ships 19.4.3), so the Gitaly VM was removed and prod runs the StatefulSet too (D-033). GitLab's page lists cgroup v2, containerd 2.1.0 or later and containerd `cgroup_writable = true` as requirements, and says GitLab "does not guarantee compatibility" with managed offerings such as AKS.
+- **Default:** Gitaly's cgroups feature (`gitlab.gitaly.cgroups`) is off. It needs a root init container, which the `gitlab` namespace's Pod Security baseline allows, but `cgroup_writable` is a containerd setting AKS doesn't expose. Guaranteed QoS and the dedicated pool protect Gitaly instead.
+- **To check on the clusters:** the containerd version of the node image (`kubectl get nodes -o wide`) and cgroup v2 (`stat -fc %T /sys/fs/cgroup` on a node shows `cgroup2fs`). If AKS adds a supported way to set `cgroup_writable`, turn on cgroups with repository limits.
+- **Not verified:** `Premium_ZRS` disks in the deployment region, and the prod Gitaly size (6 CPU, 24 GiB on a `Standard_D8ds_v5`), which is a starting point to adjust from the Gitaly dashboard.
 
 ### B-028 Keyless signing with self-hosted GitLab
 - **What was found:** D-022 signs keyless with the CI OIDC identity through the public Sigstore Fulcio. A GitLab instance on a private zone can't be used as an OIDC issuer for public Fulcio, which must fetch the issuer's discovery document.
