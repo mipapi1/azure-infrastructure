@@ -13,12 +13,12 @@ flowchart TB
   subgraph avd["AVD spoke (az-avd)"]
     hosts[Session hosts] --- fsl[(FSLogix<br/>Azure Files)]
   end
-  subgraph aks["AKS spoke (az-aks)"]
-    cluster[Private AKS] --- acr[(Registry)]
+  subgraph aks["App AKS spoke (az-aks prod)"]
+    cluster[App AKS cluster<br/>private, your apps] --- acr[(Registry)]
     cluster --- kv[(Key Vault)]
   end
-  subgraph tools["Tools spoke (az-aks tools-prod + az-gitlab)"]
-    tcluster[Tools AKS<br/>GitLab, Gitaly, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
+  subgraph tools["Tools AKS spoke (az-aks tools-prod + az-gitlab)"]
+    tcluster[Tools AKS cluster<br/>GitLab, Gitaly, runners] --- tdata[(PostgreSQL, Redis,<br/>Blob, Registry)]
   end
   subgraph aib["Image Builder (az-image-builder)"]
     gal[(Compute Gallery)]

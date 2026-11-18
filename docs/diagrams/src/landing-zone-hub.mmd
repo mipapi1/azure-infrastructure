@@ -20,11 +20,13 @@ flowchart TB
     dce[DCE + VM DCRs] --- ampls
   end
   spoke1[AVD spoke] <-->|peering, UDR 0/0 to firewall| vnet
-  spoke2[AKS spoke] <-->|peering, UDR 0/0 to firewall| vnet
+  spoke2[App AKS spoke] <-->|peering, UDR 0/0 to firewall| vnet
+  spoke3[Tools AKS spoke] <-->|peering, UDR 0/0 to firewall| vnet
 
   class root,platform,lzs,sandbox,conn,ident,mgmt,corp,online gov
   class decom muted
   class vnet,pe,spoke1,spoke2 net
+  class spoke3 ci
   class afw,bas,vgw sec
   class dns data
   class law,ampls,dce obs

@@ -7,11 +7,11 @@ flowchart LR
     hosts[Session hosts<br/>Entra or domain joined]
     prof[(FSLogix<br/>Azure Files or Cloud Cache blob)]
   end
-  subgraph app["Application AKS spoke"]
-    appaks[Application cluster]
+  subgraph app["App AKS spoke"]
+    appaks[App AKS cluster]
   end
-  subgraph tools["Tools spoke"]
-    toolsaks[Tools cluster<br/>gitlab, gitaly and runner pools]
+  subgraph tools["Tools AKS spoke"]
+    toolsaks[Tools AKS cluster<br/>gitlab, gitaly and runner pools]
     data[(PostgreSQL, Managed Redis,<br/>Blob, Registry)]
     gvm[(Gitaly disk<br/>Premium ZRS)]
   end

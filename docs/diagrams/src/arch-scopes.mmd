@@ -8,7 +8,7 @@ flowchart LR
   end
   subgraph wl["Workload subscriptions"]
     avd["az-avd<br/>spoke + AVD"]
-    aks["az-aks<br/>spoke + private AKS"]
+    aks["az-aks<br/>app and tools AKS spokes"]
   end
   apps["az-apps<br/>Helm + Flux"]
   gov --> hub --> avd & aks

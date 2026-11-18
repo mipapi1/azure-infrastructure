@@ -29,6 +29,12 @@ Bicep for an Azure platform built on [Azure Verified Modules (AVM)](https://azur
 
 All egress from spokes goes through the hub firewall, which also resolves the hub's private DNS zones for the spokes. PaaS services are reached through private endpoints; monitoring ingestion goes through the private link scope. GitLab is internal only: AVD session hosts and VPN or ExpressRoute clients reach it through the firewall on 443 and 22. The tools cluster follows hosted Git, so GitLab can be rebuilt without GitLab; the application cluster moves to GitLab once it runs ([az-gitlab](az-gitlab/README.md#bootstrap-order)).
 
+### Why two AKS clusters?
+
+Prod runs two clusters from the same `az-aks` template: the **app AKS cluster** for workloads and the **tools AKS cluster** for GitLab, Gitaly and CI runners, each in its own spoke. CI runners execute whatever code is pushed to any project, which is close to what Microsoft calls hostile multi-tenancy, where it recommends ["physically isolated clusters"](https://learn.microsoft.com/azure/aks/operator-best-practices-cluster-isolation). The Well-Architected guide for AKS also calls separate clusters for unrelated workloads ["the strongest isolation boundary"](https://learn.microsoft.com/azure/well-architected/service-guides/azure-kubernetes-service). The separation also means a GitLab upgrade or a runaway job can't take applications down.
+
+A second cluster has a cost: another control plane, system pool and monitoring stack to run and upgrade. That's why Microsoft's default is to minimize cluster count. Staging takes the other path: `az-gitlab` `placement: 'Shared'` runs GitLab and the runners on tainted node pools in the application cluster, with the runners in their own subnet. The trade-offs are in [D-033](docs/DECISIONS.md#d-033-gitlab-on-aks).
+
 ## Which folders do I need?
 
 <p align="center">
