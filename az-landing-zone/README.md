@@ -32,7 +32,8 @@ az deployment sub create --location eastus --name landing-zone \
   --template-file az-landing-zone/main.bicep --parameters az-landing-zone/params/prod.bicepparam
 
 # 3. Copy outputs into governance/params/prod.bicepparam
-#    (logAnalyticsWorkspaceResourceId, vmDataCollectionRuleResourceId, vmMonitoringIdentityResourceId)
+#    (monitoring.logAnalyticsWorkspaceResourceId, vmDataCollectionRuleResourceIds.windows,
+#    loggingIdentityResourceId)
 #    and run step 1 again.
 ```
 
@@ -47,6 +48,7 @@ az deployment sub create --location eastus --name landing-zone \
 | `firewallPolicyResourceId` | workloads add their own rule collection group to the hub policy |
 | `internalIpGroupResourceId` | rules that need the whole internal address space as an IP Group (empty unless `firewall.useIpGroups`) |
 | `vmDataCollectionRuleResourceIds` | governance VM monitoring policy, AVD session hosts |
+| `loggingIdentityResourceId` | governance VM monitoring policy (`vmMonitoringIdentityResourceId`) |
 | `keyVaultResourceId`, `encryptionIdentityResourceId` | customer-managed keys |
 
 ## Environment differences
@@ -112,5 +114,6 @@ The alert rules skip query validation so they can be created before the tables e
 | `internalIpGroupResourceId` | string | Resource ID of the internal (spoke address space) IP Group, empty when firewall.useIpGroups is false. |
 | `vmDataCollectionRuleResourceIds` | object | Resource IDs of the baseline VM data collection rules, keyed by OS. |
 | `keyVaultResourceId` | string | Resource ID of the platform Key Vault, empty when disabled. |
+| `loggingIdentityResourceId` | string | Resource ID of the logging user-assigned identity. Governance uses it as vmMonitoringIdentityResourceId for the Azure Monitor Agent policy. |
 | `encryptionIdentityResourceId` | string | Resource ID of the user-assigned identity used for customer-managed key access. |
 <!-- END_PARAMS -->

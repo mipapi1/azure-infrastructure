@@ -14,7 +14,7 @@ Bicep for an Azure platform built on [Azure Verified Modules (AVM)](https://azur
 | [`az-gitlab`](az-gitlab) | Subscription + Kubernetes | Internal GitLab on the tools cluster: PostgreSQL, Managed Redis and Blob Storage on private endpoints, in-cluster Gitaly, DNS records, firewall rules, and the Flux manifests for GitLab and its runners |
 | [`az-apps`](az-apps) | Kubernetes | Hardened Helm chart, namespace guardrails, Flux releases, CI that builds, scans, signs and promotes images by digest |
 | [`modules`](modules) | | Shared modules: naming, types, spoke network, firewall rule collection group, AVD, AKS, GitLab and governance building blocks |
-| [`docs`](docs) | | [Architecture](docs/ARCHITECTURE.md), [conventions](docs/CONVENTIONS.md), [decision log](docs/DECISIONS.md) |
+| [`docs`](docs) | | [Deployment guide](docs/DEPLOYMENT.md), [architecture](docs/ARCHITECTURE.md), [conventions](docs/CONVENTIONS.md), [decision log](docs/DECISIONS.md) |
 
 ## Architecture
 
@@ -45,6 +45,8 @@ A second cluster has a cost: another control plane, system pool and monitoring s
 </p>
 
 ## Deployment order
+
+New to this repository? **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** walks through the whole process from an empty tenant: tools, permissions, Entra groups, placeholders, deploying each stack, wiring outputs between them, checks and teardown. It also has a short staging sandbox path (hub plus one AKS cluster). The table below is the summary.
 
 | # | Deployment | Command | Needs |
 |---|---|---|---|

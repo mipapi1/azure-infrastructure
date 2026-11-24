@@ -6,7 +6,7 @@ param allowedLocations = ['eastus', 'westus2']
 
 // Second pass, after az-landing-zone is deployed: fill these from its outputs
 // (monitoring.logAnalyticsWorkspaceResourceId, vmDataCollectionRuleResourceIds.windows,
-// and the logging identity) to turn on the DeployIfNotExists policies.
+// and loggingIdentityResourceId) to turn on the DeployIfNotExists policies.
 param logAnalyticsWorkspaceResourceId = ''
 param vmDataCollectionRuleResourceId = ''
 param vmMonitoringIdentityResourceId = ''

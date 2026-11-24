@@ -4,3 +4,6 @@ checkov.sarif
 .DS_Store
 *.snapshot.json
 node_modules/
+
+# Deployment outputs saved locally (docs/DEPLOYMENT.md)
+*-outputs.*.json

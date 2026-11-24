@@ -987,5 +987,8 @@ output vmDataCollectionRuleResourceIds object = {
 @description('Resource ID of the platform Key Vault, empty when disabled.')
 output keyVaultResourceId string = (keyVault.?enabled ?? true) ? platformKeyVault!.outputs.resourceId : ''
 
+@description('Resource ID of the logging user-assigned identity. Governance uses it as vmMonitoringIdentityResourceId for the Azure Monitor Agent policy.')
+output loggingIdentityResourceId string = identities[0].outputs.resourceId
+
 @description('Resource ID of the user-assigned identity used for customer-managed key access.')
 output encryptionIdentityResourceId string = identities[1].outputs.resourceId
