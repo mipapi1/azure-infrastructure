@@ -59,6 +59,13 @@ param dns = {
 // az.getSecret('<subscription-id>', 'tools-prod-eus-rg', '<tools-key-vault-name>', '<secret>').
 param postgresAdministratorPassword = readEnvironmentVariable('GITLAB_POSTGRES_PASSWORD', '')
 
+// Entra ID administrators for people; GitLab itself connects with the password login.
+param postgres = {
+  entraAdministrators: [
+    { objectId: '<gitlab-db-admins-group-object-id>', principalName: 'gitlab-db-admins', principalType: 'Group' }
+  ]
+}
+
 // Gitaly runs in the cluster on the dedicated gitaly pool (az-aks/params/tools-prod.bicepparam).
 param gitaly = {
   diskSizeGB: 512

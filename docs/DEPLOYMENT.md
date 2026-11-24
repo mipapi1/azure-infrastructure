@@ -81,6 +81,7 @@ Create these as security groups and note each object ID (`az ad group show -g <n
 | AKS admins, AKS readers | `az-aks/params/{staging,prod}.bicepparam` |
 | Tools cluster admins and readers | `az-aks/params/tools-prod.bicepparam` (prod GitLab only) |
 | AVD users, AVD admins | `az-avd/params/*.bicepparam` |
+| GitLab database admins | `az-gitlab/params/*.bicepparam` (`postgres.entraAdministrators`) |
 | Platform owners (optional) | governance `eligibleRoleAssignments` (PIM) |
 | Image admins (optional) | `az-image-builder/landing-zone/params/landing-zone.bicepparam` |
 

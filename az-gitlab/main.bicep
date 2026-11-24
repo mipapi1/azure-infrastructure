@@ -316,6 +316,11 @@ var postgresAdmin = postgres.?administratorLogin ?? 'gitlab'
 // GitLab 19 needs amcheck, btree_gist, pg_trgm and plpgsql; pg_stat_statements is recommended.
 var postgresExtensions = 'AMCHECK,BTREE_GIST,PG_TRGM,PG_STAT_STATEMENTS'
 
+var postgresEntraAdministrators = map(
+  postgres.?entraAdministrators ?? [],
+  admin => union(admin, { tenantId: tenant().tenantId })
+)
+
 module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.16.1' = {
   name: '${uniqueString(deployment().name, location)}-psql'
   scope: az.resourceGroup(rgName)
@@ -335,12 +340,13 @@ module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.16
     backupRetentionDays: postgres.?backupRetentionDays ?? (isProd ? 35 : 7)
     geoRedundantBackup: isProd ? 'Enabled' : 'Disabled'
     // GitLab authenticates with a password (it has no Entra token support for PostgreSQL).
-    // People use Entra ID through the administrators below.
+    // People use Entra ID through postgres.entraAdministrators.
     authConfig: {
       activeDirectoryAuth: 'Enabled'
       passwordAuth: 'Enabled'
       tenantId: tenant().tenantId
     }
+    administrators: postgresEntraAdministrators
     administratorLogin: postgresAdmin
     administratorLoginPassword: postgresAdministratorPassword
     publicNetworkAccess: 'Disabled'
@@ -449,6 +455,7 @@ module keycloakDatabase 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.
       passwordAuth: 'Enabled'
       tenantId: tenant().tenantId
     }
+    administrators: postgresEntraAdministrators
     administratorLogin: 'keycloak'
     administratorLoginPassword: keycloakDatabasePassword
     publicNetworkAccess: 'Disabled'

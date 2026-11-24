@@ -99,7 +99,7 @@ spec:
         username: ${POSTGRES_USER}
         database: gitlabhq_production
         password:
-          secret: gitlab-postgres
+          secret: gitlab-postgres  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
           key: password
 
       # Azure Managed Redis: TLS on 10000, single endpoint (EnterpriseCluster policy).
@@ -109,16 +109,16 @@ spec:
         scheme: rediss
         auth:
           enabled: true
-          secret: gitlab-redis
+          secret: gitlab-redis  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
           key: password
 
       gitaly:
         authToken:
-          secret: gitlab-gitaly-shell
+          secret: gitlab-gitaly-shell  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
           key: gitaly-token
       shell:
         authToken:
-          secret: gitlab-gitaly-shell
+          secret: gitlab-gitaly-shell  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
           key: shell-secret
 
       minio:
@@ -132,7 +132,7 @@ spec:
           enabled: true
           proxy_download: true
           connection:
-            secret: gitlab-object-storage
+            secret: gitlab-object-storage  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
             key: connection
         lfs:
           bucket: git-lfs
@@ -168,7 +168,7 @@ spec:
           syncProfileFromProvider: [openid_connect]
           syncProfileAttributes: [name, email]
           providers:
-            - secret: gitlab-oidc
+            - secret: gitlab-oidc  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
               key: provider
 
         enableUsagePing: false
@@ -193,7 +193,7 @@ spec:
       podLabels:
         azure.workload.identity/use: "true"
       storage:
-        secret: gitlab-object-storage
+        secret: gitlab-object-storage  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
         key: registry
       hpa:
         minReplicas: 2
@@ -235,7 +235,7 @@ spec:
           objectStorage:
             backend: azure
             config:
-              secret: gitlab-object-storage
+              secret: gitlab-object-storage  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
               key: backup
           cron:
             enabled: true

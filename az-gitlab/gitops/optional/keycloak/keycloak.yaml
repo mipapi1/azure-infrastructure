@@ -25,7 +25,7 @@ spec:
       remoteRef:
         key: gitlab-keycloak-db-password
     # Temporary admin for the first sign-in only: create a real admin, then delete this user.
-    - secretKey: bootstrap-admin-password
+    - secretKey: bootstrap-admin-password  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
       remoteRef:
         key: gitlab-keycloak-bootstrap-admin
 ---
@@ -99,7 +99,7 @@ spec:
       port: 5432
       database: keycloak
       username: keycloak
-      existingSecret: keycloak-db
+      existingSecret: keycloak-db  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
       existingSecretKey: password
     podSecurityContext:
       runAsNonRoot: true

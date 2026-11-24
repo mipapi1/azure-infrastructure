@@ -79,6 +79,18 @@ type gitlabPostgresType = {
 
   @description('Optional. Administrator login GitLab connects with. Defaults to gitlab.')
   administratorLogin: string?
+
+  @description('Optional. Entra ID administrators of the GitLab and Keycloak servers, for people (GitLab itself uses the password login). Use a group. Defaults to none.')
+  entraAdministrators: {
+    @description('Required. Object ID of the group, user or service principal.')
+    objectId: string
+
+    @description('Required. Display name of the principal, used as its PostgreSQL role name.')
+    principalName: string
+
+    @description('Required. Principal type.')
+    principalType: 'Group' | 'ServicePrincipal' | 'User'
+  }[]?
 }
 
 @export()

@@ -55,6 +55,13 @@ param dns = {
 
 param postgresAdministratorPassword = readEnvironmentVariable('GITLAB_POSTGRES_PASSWORD', '')
 
+// Entra ID administrators for people; GitLab itself connects with the password login.
+param postgres = {
+  entraAdministrators: [
+    { objectId: '<gitlab-db-admins-group-object-id>', principalName: 'gitlab-db-admins', principalType: 'Group' }
+  ]
+}
+
 param gitaly = {
   diskSizeGB: 64
 }

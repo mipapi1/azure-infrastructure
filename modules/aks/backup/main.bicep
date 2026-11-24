@@ -71,6 +71,8 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.1' = {
     networkAcls: { bypass: 'AzureServices', defaultAction: 'Deny' }
     blobServices: {
       containers: [{ name: containerName, publicAccess: 'None' }]
+      containerDeleteRetentionPolicyEnabled: true
+      containerDeleteRetentionPolicyDays: 7
       diagnosticSettings: diagnosticSettings
     }
     privateEndpoints: [

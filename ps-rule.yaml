@@ -40,6 +40,9 @@ suppression:
     - aibprodeusst
     # D-007: staging FSLogix blob store (test parameter file) is LRS to save cost.
     - avdcostagingeusfslb4fabb
+    # D-033: staging GitLab object storage and AKS backup storage are LRS to save cost.
+    - gitlabstagingeusstf5c913
+    - staksstagingeusbkda1abc8
   # D-025: FSLogix Cloud Cache on blob authenticates with the account key; tagged shared-key-exception.
   Azure.Storage.LocalAuth:
     - avdcostagingeusfslb4fabb
@@ -61,10 +64,12 @@ suppression:
   Azure.AKS.NetworkPolicy:
     - aks-prod-eus-aks
     - aks-staging-eus-aks
+    - tools-prod-eus-aks
   # D-018: single-region registry; replicate when a second region is added.
   Azure.ACR.GeoReplica:
     - aksprodeuscr5e1e6a92e49e1
     - aksstagingeuscr5e1e6a92e49e1
+    - toolsprodeuscra7f3b2aba5649
   # D-007: AVM key vault and registry modules declare secure object parameters (key and credential definitions) that are passed nothing secret here.
   Azure.Deployment.SecureParameter:
     - hub-prod-eus-kv-deploy
@@ -73,6 +78,18 @@ suppression:
     - aks-staging-eus-kv-deploy
     - aks-prod-eus-acr-deploy
     - aks-staging-eus-acr-deploy
+    - tools-prod-eus-kv-deploy
+    - tools-prod-eus-acr-deploy
+  # D-033: GitLab connects to PostgreSQL with a password (no Entra token support); people use
+  # Entra ID through postgres.entraAdministrators.
+  Azure.PostgreSQL.AADOnly:
+    - gitlab-prod-eus-psql
+    - gitlab-staging-eus-psql
+  # D-033: staging GitLab PostgreSQL runs without HA or geo-redundant backup to save cost.
+  Azure.PostgreSQL.ZoneRedundantHA:
+    - gitlab-staging-eus-psql
+  Azure.PostgreSQL.GeoRedundantBackup:
+    - gitlab-staging-eus-psql
   # D-007: Bastion must reach VMs on 22/3389; that is its purpose.
   Azure.NSG.LateralTraversal:
     - hub-prod-eus-vnet-AzureBastionSubnet-nsg

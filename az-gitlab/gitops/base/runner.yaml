@@ -144,7 +144,7 @@ spec:
     runners:
       # runner-token from Key Vault (secrets.yaml). Create the runner in GitLab (Admin > CI/CD >
       # Runners) and store its glrt- token as gitlab-runner-token.
-      secret: gitlab-runner-token
+      secret: gitlab-runner-token  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
       jobNamespace: ci-jobs
       executor: kubernetes
       config: |
