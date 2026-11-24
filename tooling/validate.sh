@@ -93,7 +93,10 @@ run_k8s() {
   for d in az-apps/platform az-apps/deploy az-aks/gitops az-gitlab/gitops; do
     [ -d "$d" ] || continue
     for overlay in $(find "$d" -name kustomization.yaml -exec dirname {} \;); do
-      kustomize build "$overlay" | kubeconform -strict -summary -ignore-missing-schemas $schemas || fail=1
+      # Apply Flux substitution defaults (${VAR:=default}) as the cluster would; variables
+      # without a default stay literal, as before.
+      kustomize build "$overlay" | sed -E 's/\$\{[A-Z0-9_]+:=([^}]*)\}/\1/g' \
+        | kubeconform -strict -summary -ignore-missing-schemas $schemas || fail=1
     done
   done
 }

@@ -59,7 +59,7 @@ spec:
     podLabels:
       azure.workload.identity/use: "true"
     sources: [service, ingress]
-    domainFilters: [${EXTERNAL_DNS_DOMAIN}]
+    domainFilters: ["${EXTERNAL_DNS_DOMAIN}"]
     policy: sync
     registry: txt
     txtOwnerId: ${CLUSTER}

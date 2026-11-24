@@ -46,7 +46,7 @@ spec:
         namespace: flux-system
   values:
     githubConfigUrl: ${GITHUB_CONFIG_URL}
-    githubConfigSecret: github-arc-app
+    githubConfigSecret: github-arc-app  # checkov:skip=CKV_SECRET_6: Kubernetes Secret or Key Vault name, not a value
     runnerScaleSetName: platform-ci
     minRunners: 0
     maxRunners: 10

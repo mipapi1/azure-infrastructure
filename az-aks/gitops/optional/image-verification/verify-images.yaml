@@ -7,7 +7,7 @@ kind: ImageValidatingPolicy
 metadata:
   name: verify-registry-signatures
 spec:
-  validationActions: [${IMAGE_VERIFICATION_ACTION}]
+  validationActions: ["${IMAGE_VERIFICATION_ACTION:=Audit}"]
   failurePolicy: Ignore
   matchConstraints:
     resourceRules:
