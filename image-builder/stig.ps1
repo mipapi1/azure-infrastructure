@@ -2,9 +2,10 @@
 # `stig = true` in main.bicepparam.
 #
 # How it works:
-#   1. This step applies supplemental settings the GPO package doesn't cover (TLS protocols and
-#      ciphers, .NET strong crypto, DEP, PowerShell 2.0, password expiry, auditing), downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
-#      and prepares the GPOs in C:\ProgramData\STIG.
+#   1. This step downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
+#      prepares the GPOs in C:\ProgramData\STIG, and applies settings the GPO package doesn't
+#      cover (TLS protocols and ciphers, .NET strong crypto, DEP, PowerShell 2.0, password expiry,
+#      auditing).
 #   2. It replaces C:\DeprovisioningScript.ps1, which Image Builder runs last. That script imports
 #      the GPOs with LGPO and then runs sysprep. The STIG is applied at that point because it denies
 #      network logon to local accounts, which would cut off Image Builder's WinRM session if it were
