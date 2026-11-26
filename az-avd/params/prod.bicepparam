@@ -65,6 +65,8 @@ param identity = {
   intuneEnrollment: true
   userGroupObjectIds: ['<avd-users-group-object-id>']
   adminGroupObjectIds: ['<avd-admins-group-object-id>']
+  // Lets AVD start and stop session hosts (scaling plan, start VM on connect).
+  // az ad sp show --id 9cdead84-a844-4324-93f2-b2e6bb768d07 --query id -o tsv
   avdServicePrincipalObjectId: '<azure-virtual-desktop-sp-object-id>'
 }
 
