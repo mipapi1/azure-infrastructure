@@ -4,7 +4,7 @@
 
 param name string
 param addressPrefix string
-@description('[{ name, addressPrefix, delegation? }] where delegation is a service name, e.g. Microsoft.ContainerInstance/containerGroups.')
+@description('[{ name, addressPrefix, delegation?, privateLinkServices? }]: delegation is a service name; privateLinkServices allows Private Link services in the subnet.')
 param subnets array
 param ruleCollections array
 param rulePriority int
@@ -53,6 +53,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
           addressPrefix: s.addressPrefix
           routeTable: { id: routeTable.id }
           delegations: empty(s.?delegation ?? '') ? [] : [{ name: 'delegation', properties: { serviceName: s.delegation } }]
+          privateLinkServiceNetworkPolicies: (s.?privateLinkServices ?? false) ? 'Disabled' : 'Enabled'
         }
       }
     ]

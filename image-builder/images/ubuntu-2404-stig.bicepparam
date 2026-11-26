@@ -30,4 +30,5 @@ param publisherIds = ['<publisher-object-id>']
 // Build VM. Pick a size your subscription can use in the region:
 // az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv
 param buildVmSize = 'Standard_D2as_v4'
+param proxyVmSize = 'Standard_D2as_v4' // Image Builder's proxy VM in snet-build, during builds only
 param buildTimeoutInMinutes = 120
