@@ -1,5 +1,5 @@
-// Azure Virtual Desktop: spoke network, pooled host pool, desktop, workspace and
-// Entra-joined session hosts built from the image-builder gallery image.
+// Azure Virtual Desktop: spoke network, pooled host pool, desktop, workspace, FSLogix profile
+// storage and Entra-joined session hosts built from the image-builder gallery image.
 // Deploy into resource group rg-avd.
 
 param userGroupId string
@@ -9,6 +9,13 @@ param adminPassword string
 param adminUsername string = 'avdadmin'
 param hostCount int = 1
 param vmSize string = 'Standard_D4ds_v5'
+@description('Where FSLogix keeps profiles: an Azure Files share or Cloud Cache on blob storage.')
+@allowed(['AzureFiles', 'BlobCloudCache'])
+param profileStorageType string = 'AzureFiles'
+@description('Azure Files share size. Premium shares start at 100 GiB.')
+@minValue(100)
+param profileShareQuotaGiB int = 100
+param profileSizeInMBs int = 30000
 param tokenStart string = utcNow()
 param location string = resourceGroup().location
 
@@ -19,8 +26,11 @@ module spoke '../modules/spoke.bicep' = {
   params: {
     name: 'avd'
     location: location
-    addressPrefix: subnetPrefix
-    subnets: [{ name: 'snet-hosts', addressPrefix: subnetPrefix }]
+    addressPrefix: '10.1.0.0/23'
+    subnets: [
+      { name: 'snet-hosts', addressPrefix: subnetPrefix }
+      { name: 'snet-pe', addressPrefix: '10.1.1.0/27' }
+    ]
     rulePriority: 100
     ruleCollections: [
       {
@@ -134,6 +144,84 @@ resource adminLogin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+// FSLogix profile storage, reached over a private endpoint with public access off. Both options
+// work on Entra-joined hosts without Kerberos: hosts authenticate with the account key, which
+// only reaches them as a protected Run Command parameter.
+//   AzureFiles      Premium SMB share. Lower latency for VHDX; the usual choice.
+//   BlobCloudCache  Standard page blobs with a local cache on each host. Cheaper, and keeps
+//                   working through short storage outages.
+var useFiles = profileStorageType == 'AzureFiles'
+var storageService = useFiles ? 'file' : 'blob'
+
+resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
+  name: 'stfslogix${uniqueString(resourceGroup().id)}'
+  location: location
+  kind: useFiles ? 'FileStorage' : 'StorageV2'
+  sku: { name: useFiles ? 'Premium_LRS' : 'Standard_LRS' }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    allowBlobPublicAccess: false
+    allowSharedKeyAccess: true
+    publicNetworkAccess: 'Disabled'
+  }
+}
+
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01' = if (useFiles) {
+  parent: profileStorage
+  name: 'default'
+  properties: {
+    shareDeleteRetentionPolicy: { enabled: true, days: 7 }
+    protocolSettings: {
+      smb: { versions: 'SMB3.1.1', channelEncryption: 'AES-256-GCM' }
+    }
+  }
+}
+
+resource profileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-01-01' = if (useFiles) {
+  parent: fileService
+  name: 'profiles'
+  properties: {
+    shareQuota: profileShareQuotaGiB
+    enabledProtocols: 'SMB'
+  }
+}
+
+module storageZone '../modules/dns-zone.bicep' = {
+  name: 'dns-${storageService}'
+  scope: resourceGroup('rg-hub')
+  params: {
+    name: 'privatelink.${storageService}.${environment().suffixes.storage}'
+  }
+}
+
+resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
+  name: 'pe-fslogix'
+  location: location
+  properties: {
+    subnet: { id: '${spoke.outputs.vnetId}/subnets/snet-pe' }
+    privateLinkServiceConnections: [
+      {
+        name: storageService
+        properties: {
+          privateLinkServiceId: profileStorage.id
+          groupIds: [storageService]
+        }
+      }
+    ]
+  }
+}
+
+resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-07-01' = {
+  parent: profileEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      { name: storageService, properties: { privateDnsZoneId: storageZone.outputs.id } }
+    ]
+  }
+}
+
 resource image 'Microsoft.Compute/galleries/images@2024-03-03' existing = {
   name: 'gal_images/win11-avd'
   scope: resourceGroup('rg-image-builder')
@@ -178,6 +266,7 @@ resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
         osDisk: {
           createOption: 'FromImage'
           deleteOption: 'Delete'
+          diskSizeGB: 256 // room for the FSLogix local cache
           managedDisk: { storageAccountType: 'Premium_LRS' }
         }
       }
@@ -233,5 +322,29 @@ resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' 
       }
     }
     dependsOn: [entraJoin[i]]
+  }
+]
+
+resource fslogix 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for i in range(0, hostCount): {
+    parent: hosts[i]
+    name: 'configure-fslogix'
+    location: location
+    properties: {
+      asyncExecution: false
+      treatFailureAsDeploymentFailure: true
+      timeoutInSeconds: 900
+      source: { script: loadTextContent('fslogix.ps1') }
+      parameters: [
+        { name: 'StorageType', value: profileStorageType }
+        { name: 'AccountName', value: profileStorage.name }
+        { name: 'EndpointSuffix', value: environment().suffixes.storage }
+        { name: 'SizeInMBs', value: string(profileSizeInMBs) }
+      ]
+      protectedParameters: [
+        { name: 'AccountKey', value: profileStorage.listKeys().keys[0].value }
+      ]
+    }
+    dependsOn: [registration[i], profileDns, profileShare]
   }
 ]
