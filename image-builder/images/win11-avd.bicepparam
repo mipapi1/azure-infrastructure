@@ -31,7 +31,7 @@ param publisherIds = ['<publisher-object-id>']
 // Build VM. Pick a size your subscription can use in the region:
 // az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv
 param buildVmSize = 'Standard_D2as_v4'
-// isolated: Image Builder's container runs in snet-container (Dept of State setup).
+// isolated: Image Builder's container runs in snet-container (Image Builder's isolated image builds).
 // proxy: it runs in Image Builder's network and reaches the build VM through a proxy VM in snet-build.
 param buildMode = 'isolated'
 param proxyVmSize = 'Standard_D2as_v4' // proxy mode only
