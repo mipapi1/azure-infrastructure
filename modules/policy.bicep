@@ -1,7 +1,9 @@
-// Baseline policy for a management group: allowed location and the Microsoft cloud security benchmark.
+// Baseline policy for a management group: allowed locations and the Microsoft cloud security benchmark.
 targetScope = 'managementGroup'
 
 param location string
+@description('Regions resources may be created in.')
+param locations array = [location]
 
 resource allowedLocations 'Microsoft.Authorization/policyAssignments@2025-03-01' = {
   name: 'allowed-locations'
@@ -9,7 +11,7 @@ resource allowedLocations 'Microsoft.Authorization/policyAssignments@2025-03-01'
     displayName: 'Allowed locations'
     policyDefinitionId: tenantResourceId('Microsoft.Authorization/policyDefinitions', 'e56962a6-4747-49cd-b67b-bf8b01975c4c')
     parameters: {
-      listOfAllowedLocations: { value: [location] }
+      listOfAllowedLocations: { value: locations }
     }
   }
 }

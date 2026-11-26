@@ -7,6 +7,8 @@ param dbAdminGroupName string
 @secure()
 param postgresPassword string
 param location string = resourceGroup().location
+@description('PostgreSQL region. Defaults to location; set another region if the subscription is restricted from creating servers there. The private endpoint stays in the AKS spoke.')
+param postgresLocation string = location
 
 var nodePrefix = '10.2.0.0/24'
 var ingressIp = '10.2.0.250'
@@ -14,7 +16,7 @@ var ingressIp = '10.2.0.250'
 // GitLab signs in with the password; people sign in with Entra ID through the admin group.
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: 'psql-gitlab-${uniqueString(resourceGroup().id)}'
-  location: location
+  location: postgresLocation
   sku: { name: 'Standard_B2ms', tier: 'Burstable' }
   properties: {
     version: '17'

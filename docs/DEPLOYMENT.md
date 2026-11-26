@@ -97,7 +97,7 @@ Run every command from the repository root. The examples use `eastus`.
    az aks command invoke -g rg-aks -n aks --file apps/web-app.yaml --command "kubectl apply -f web-app.yaml"
    ```
 
-11. GitLab. Edit `gitlab/main.bicepparam`: `dbAdminGroupId` and `dbAdminGroupName` (gitlab-db-admins).
+11. GitLab. Edit `gitlab/main.bicepparam`: `dbAdminGroupId` and `dbAdminGroupName` (gitlab-db-admins). If PostgreSQL fails with `The value of the 'Version' should be in: []`, the subscription can't create servers in this region: add `-p postgresLocation=<region>` (check with `az postgres flexible-server list-skus -l <region>`) and add that region to `allowedLocations` in governance.
 
     ```bash
     export GITLAB_DB_PASSWORD='<PostgreSQL admin password>'

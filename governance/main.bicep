@@ -5,6 +5,8 @@ targetScope = 'managementGroup'
 
 param subscriptionId string
 param location string = deployment().location
+@description('Regions resources may be created in. Add a region here for a service that is restricted in location.')
+param allowedLocations array = [location]
 
 var groups = [
   { name: 'alz-platform', displayName: 'Platform' }
@@ -41,5 +43,6 @@ module policy '../modules/policy.bicep' = {
   scope: managementGroup(root.name)
   params: {
     location: location
+    locations: allowedLocations
   }
 }
