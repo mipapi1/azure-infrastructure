@@ -13,7 +13,7 @@ An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual D
 | [`avd`](avd) | Resource group `rg-avd` | AVD spoke, pooled host pool, desktop, workspace, FSLogix profiles on Azure Files or blob Cloud Cache, Entra-joined session hosts |
 | [`aks`](aks) | Resource group `rg-aks` | AKS spoke, private cluster (Entra ID RBAC, CNI Overlay with Cilium, workload identity), container registry on a private endpoint |
 | [`apps`](apps) | Kubernetes | Sample web app: Dockerfile, page and manifest on an internal load balancer |
-| [`gitlab`](gitlab) | Resource group `rg-gitlab` + Kubernetes | PostgreSQL on a private endpoint, `gitlab.internal` DNS, firewall rules, and the Helm values for GitLab on AKS |
+| [`gitlab`](gitlab) | Resource group `rg-gitlab` + Kubernetes | PostgreSQL, Azure Managed Redis and blob storage (workload identity, no keys) on private endpoints, `gitlab.internal` DNS, firewall rules, and the Helm values for GitLab on AKS |
 | [`modules`](modules) | | Shared modules: spoke network with IP groups and firewall rules, hub peering, private DNS zone, budget, policy |
 | [`docs`](docs) | | [Deployment guide](docs/DEPLOYMENT.md) |
 

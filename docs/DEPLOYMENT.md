@@ -112,13 +112,49 @@ Run every command from the repository root. The examples use `eastus`.
     az deployment group create -g rg-gitlab -f gitlab/main.bicep -p gitlab/main.bicepparam
     ```
 
-    Edit `gitlab/values.yaml`: `<postgres-server>` (`az postgres flexible-server list -g rg-gitlab --query [0].name -o tsv`).
+    Install the chart. The commands fill the placeholders in `gitlab/values.yaml` from the deployment outputs and create three secrets: the PostgreSQL password, the Redis access key, and the object storage settings (account name only: GitLab signs in to blob storage with workload identity).
 
     ```bash
-    az aks command invoke -g rg-aks -n aks-platform --file gitlab/values.yaml --command "\
-      kubectl create namespace gitlab && \
-      kubectl -n gitlab create secret generic gitlab-postgres --from-literal=password='$GITLAB_DB_PASSWORD' && \
+    out() { az deployment group show -g rg-gitlab -n gitlab --query "properties.outputs.$1.value" -o tsv; }
+    storage=$(out objectStorageAccount); redis=$(out redisHost)
+    postgres=$(az postgres flexible-server list -g rg-gitlab --query [0].name -o tsv)
+    redis_key=$(az redisenterprise database list-keys -g rg-gitlab --cluster-name "${redis%%.*}" --query primaryKey -o tsv)
+    dir=$(mktemp -d)
+    sed -e "s/<postgres-server>/$postgres/" -e "s/<redis-host>/$redis/" -e "s/<gitlab-client-id>/$(out gitlabClientId)/" \
+      gitlab/values.yaml > "$dir/values.yaml"
+    cat > "$dir/secrets.yaml" <<EOF
+    apiVersion: v1
+    kind: Secret
+    metadata: { name: gitlab-postgres, namespace: gitlab }
+    stringData: { password: '$GITLAB_DB_PASSWORD' }
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata: { name: gitlab-redis, namespace: gitlab }
+    stringData: { password: '$redis_key' }
+    ---
+    apiVersion: v1
+    kind: Secret
+    metadata: { name: gitlab-object-storage, namespace: gitlab }
+    stringData:
+      connection: |
+        provider: AzureRM
+        azure_storage_account_name: $storage
+        azure_storage_domain: blob.core.windows.net
+      registry: |
+        azure_v2:
+          accountname: $storage
+          container: registry
+          credentialstype: default_credentials
+          realm: core.windows.net
+      backup: |
+        azure_storage_account_name: $storage
+        azure_storage_domain: blob.core.windows.net
+    EOF
+    az aks command invoke -g rg-aks -n aks-platform --file "$dir" --command "\
+      kubectl create namespace gitlab && kubectl apply -f secrets.yaml && \
       helm install gitlab gitlab --repo https://charts.gitlab.io --version 10.4.3 -n gitlab -f values.yaml"
+    rm -rf "$dir"
     az aks command invoke -g rg-aks -n aks-platform --command \
       "kubectl -n gitlab get secret gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
     ```
