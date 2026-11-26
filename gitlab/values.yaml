@@ -1,0 +1,39 @@
+# GitLab Helm chart values: external PostgreSQL, everything else bundled.
+# Reached from AVD at http://gitlab.gitlab.internal.
+global:
+  edition: ce
+  hosts:
+    domain: gitlab.internal
+    https: false
+  ingress:
+    configureCertmanager: false
+    tls:
+      enabled: false
+  gatewayApi:
+    enabled: false
+    installEnvoy: false
+  psql:
+    host: <postgres-server>.postgres.database.azure.com
+    database: gitlabhq_production
+    username: gitlab
+    password:
+      secret: gitlab-postgres
+      key: password
+  extraEnv:
+    PGSSLMODE: require
+
+installCertmanager: false
+postgresql:
+  install: false
+prometheus:
+  install: false
+gitlab-runner:
+  install: false
+
+nginx-ingress:
+  enabled: true
+  controller:
+    service:
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+        service.beta.kubernetes.io/azure-load-balancer-ipv4: 10.2.0.250

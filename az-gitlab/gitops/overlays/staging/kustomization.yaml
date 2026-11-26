@@ -1,7 +1,0 @@
-# Staging: shared cluster, Gitaly on the gitlab pool (base), fewer replicas.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ../../base
-patches:
-  - path: gitlab-values.yaml
