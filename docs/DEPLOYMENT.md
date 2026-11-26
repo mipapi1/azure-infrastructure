@@ -61,7 +61,7 @@ Run every command from the repository root. The examples use `eastus`.
 
    New image: copy `images/win11-vlc.bicepparam`, change `name`, `source`, `apps` and `stig`, then deploy it, run `publish.sh` and run its template. New app: put an install script in `image-builder/apps/` (copy `install-vscode.ps1` or `.sh`; it gets the installer's local path) and add it to the image's `apps` with its download URL and SHA256.
 
-   Image templates can't be updated. To change an image, run `publish.sh`, delete its template (`az image builder delete -g rg-image-builder -n it-<name>`) and deploy it again. If `publish.sh` reports that `scripts.json` changed, commit it first. If a build fails with `SkuNotAvailable`, deploy with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
+   Image templates can't be updated. To change an image, run `publish.sh`, delete its template (`az image builder delete -g rg-image-builder -n it-<name>`) and deploy it again. If `publish.sh` reports that `scripts.json` changed, commit it first. If a build fails with `SkuNotAvailable`, set `buildVmSize` in the image's param file to a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv` and deploy again.
 
 7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.
 
