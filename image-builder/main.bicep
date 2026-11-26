@@ -4,9 +4,12 @@
 //   images/win11-avd.bicepparam         gallery definition win11-avd, template it-win11-avd
 //   images/ubuntu-2404-stig.bicepparam  gallery definition ubuntu-2404-stig, template it-ubuntu-2404-stig
 // Builds run in a spoke peered to the hub: the build VM sits in snet-build and reaches the internet only
-// through the hub firewall, which allows the endpoints below. Image Builder runs its own container
-// outside this VNet and reaches the build VM through a small proxy VM and a Private Link service in
-// snet-build (container instances injected into the VNet stalled while provisioning in testing).
+// through the hub firewall, which allows the endpoints below. buildMode picks how Image Builder's own
+// container (Packer) reaches the build VM:
+//   isolated  the container runs in snet-container in this spoke (Image Builder's isolated builds)
+//   proxy     the container runs in Image Builder's network and reaches the build VM through a small
+//             proxy VM and a Private Link service in snet-build
+// Both subnets always exist, so images with different modes can share the spoke.
 // Scripts and installers come from this stack's storage account over a private
 // endpoint: publish.sh downloads every installer, checks its SHA256 and uploads it with the
 // scripts; the first build step (bootstrap.ps1 / bootstrap.sh) downloads them with the build VM's
@@ -71,14 +74,18 @@ param linuxScc download = { url: '', sha256: '' }
 param publisherIds string[] = []
 @description('Build VM size. Two builds at 2 vCPUs each fit a 4 vCPU regional quota.')
 param buildVmSize string = 'Standard_D2s_v5'
-@description('Size of the proxy VM Image Builder adds to snet-build to reach the build VM.')
+@description('isolated: Image Builder\'s container runs in snet-container. proxy: it runs in Image Builder\'s own network and uses a proxy VM in snet-build.')
+param buildMode ('isolated' | 'proxy') = 'isolated'
+@description('Size of the proxy VM Image Builder adds to snet-build to reach the build VM (proxy mode only).')
 param proxyVmSize string = 'Standard_A1_v2'
 param buildTimeoutInMinutes int = 240
 param location string = resourceGroup().location
 
 var buildPrefix = '10.4.0.0/25'
+var containerPrefix = '10.4.0.128/27'
 var endpointPrefix = '10.4.0.160/27'
 var buildIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-build')
+var containerIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-container')
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-image-builder'
@@ -88,6 +95,7 @@ module spoke '../modules/spoke.bicep' = {
     addressPrefix: '10.4.0.0/24'
     subnets: [
       { name: 'snet-build', addressPrefix: buildPrefix, privateLinkServices: true }
+      { name: 'snet-container', addressPrefix: containerPrefix, delegation: 'Microsoft.ContainerInstance/containerGroups' }
       { name: 'snet-pe', addressPrefix: endpointPrefix }
     ]
     rulePriority: 500
@@ -107,6 +115,15 @@ module spoke '../modules/spoke.bicep' = {
             destinationPorts: ['1688']
           }
           {
+            // Isolated builds: Image Builder's container mounts a file share from its staging storage account.
+            ruleType: 'NetworkRule'
+            name: 'container-file-share'
+            ipProtocols: ['TCP']
+            sourceIpGroups: [containerIpGroup]
+            destinationAddresses: ['Storage']
+            destinationPorts: ['445']
+          }
+          {
             ruleType: 'NetworkRule'
             name: 'ntp'
             ipProtocols: ['UDP']
@@ -122,6 +139,21 @@ module spoke '../modules/spoke.bicep' = {
         priority: 200
         action: { type: 'Allow' }
         rules: [
+          {
+            // Isolated builds: Packer calls Azure Resource Manager and Entra ID and writes logs to the staging account.
+            ruleType: 'ApplicationRule'
+            name: 'image-builder-container'
+            protocols: [{ protocolType: 'Https', port: 443 }]
+            sourceIpGroups: [containerIpGroup]
+            targetFqdns: [
+              split(environment().resourceManager, '/')[2]
+              split(environment().authentication.loginEndpoint, '/')[2]
+              'mcr.microsoft.com'
+              '*.data.mcr.microsoft.com'
+              'packages.microsoft.com'
+              '*.blob.${environment().suffixes.storage}'
+            ]
+          }
           {
             // Image Builder's proxy VM and the build VM: VM extensions, managed disks and the staging storage account.
             ruleType: 'ApplicationRule'
@@ -282,9 +314,15 @@ var linuxSteps = concat(
   bootstrap ? [{ type: 'Shell', name: 'cleanup', inline: ['sudo rm -rf ${dir}'] }] : []
 )
 
-var vnetConfig = {
-  subnetId: '${spoke.outputs.vnetId}/subnets/snet-build'
-}
+var vnetConfig = buildMode == 'isolated'
+  ? {
+      subnetId: '${spoke.outputs.vnetId}/subnets/snet-build'
+      containerInstanceSubnetId: '${spoke.outputs.vnetId}/subnets/snet-container'
+    }
+  : {
+      subnetId: '${spoke.outputs.vnetId}/subnets/snet-build'
+      proxyVmSize: proxyVmSize
+    }
 
 var contributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
 
@@ -428,7 +466,7 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
   }
   properties: {
     buildTimeoutInMinutes: buildTimeoutInMinutes
-    vmProfile: { vmSize: buildVmSize, vnetConfig: union(vnetConfig, { proxyVmSize: proxyVmSize }), userAssignedIdentities: [buildIdentity.id] }
+    vmProfile: { vmSize: buildVmSize, vnetConfig: vnetConfig, userAssignedIdentities: [buildIdentity.id] }
     source: union({ type: 'PlatformImage' }, image.source)
     customize: windows ? windowsSteps : linuxSteps
     distribute: [
