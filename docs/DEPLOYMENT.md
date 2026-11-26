@@ -93,7 +93,7 @@ Run every command from the repository root. The examples use `eastus`.
    az aks command invoke -g rg-aks -n aks-platform --command "kubectl get nodes"
    ```
 
-10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query [0].name -o tsv`).
+10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query "[0]".name -o tsv`).
 
    ```bash
    az acr build -r <registry-name> -t web-app:1 apps
@@ -117,7 +117,7 @@ Run every command from the repository root. The examples use `eastus`.
     ```bash
     out() { az deployment group show -g rg-gitlab -n gitlab --query "properties.outputs.$1.value" -o tsv; }
     storage=$(out objectStorageAccount); redis=$(out redisHost)
-    postgres=$(az postgres flexible-server list -g rg-gitlab --query [0].name -o tsv)
+    postgres=$(az postgres flexible-server list -g rg-gitlab --query "[0]".name -o tsv)
     redis_key=$(az redisenterprise database list-keys -g rg-gitlab --cluster-name "${redis%%.*}" --query primaryKey -o tsv)
     dir=$(mktemp -d)
     sed -e "s/<postgres-server>/$postgres/" -e "s/<redis-host>/$redis/" -e "s/<gitlab-client-id>/$(out gitlabClientId)/" \
@@ -151,9 +151,9 @@ Run every command from the repository root. The examples use `eastus`.
         azure_storage_account_name: $storage
         azure_storage_domain: blob.core.windows.net
     EOF
-    az aks command invoke -g rg-aks -n aks-platform --file "$dir" --command "\
+    (cd "$dir" && az aks command invoke -g rg-aks -n aks-platform --file . --command "\
       kubectl create namespace gitlab && kubectl apply -f secrets.yaml && \
-      helm install gitlab gitlab --repo https://charts.gitlab.io --version 10.4.3 -n gitlab -f values.yaml"
+      helm install gitlab gitlab --repo https://charts.gitlab.io --version 10.4.3 -n gitlab -f values.yaml")
     rm -rf "$dir"
     az aks command invoke -g rg-aks -n aks-platform --command \
       "kubectl -n gitlab get secret gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
@@ -164,7 +164,7 @@ Run every command from the repository root. The examples use `eastus`.
 12. Tear down. Delete the workloads before the hub, then remove governance.
 
     ```bash
-    vault=$(az keyvault list -g rg-hub --query [0].name -o tsv)
+    vault=$(az keyvault list -g rg-hub --query "[0]".name -o tsv)
     for rg in rg-gitlab rg-aks rg-avd rg-jumpbox rg-image-builder rg-hub; do az group delete -n "$rg" --yes; done
     az keyvault purge -n "$vault"
     az policy assignment delete -n allowed-locations --scope /providers/Microsoft.Management/managementGroups/alz
