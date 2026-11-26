@@ -500,6 +500,22 @@ resource entraJoin 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
   }
 ]
 
+// Stops the deployment if the Entra join didn't happen (entra-join-check.ps1).
+resource entraJoinCheck 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for i in range(0, sessionHosts.count): {
+    parent: hosts[i]
+    name: 'check-entra-join'
+    location: location
+    properties: {
+      asyncExecution: false
+      treatFailureAsDeploymentFailure: true
+      timeoutInSeconds: 600
+      source: { script: loadTextContent('entra-join-check.ps1') }
+    }
+    dependsOn: [entraJoin[i]]
+  }
+]
+
 // Installs the AVD agent and registers the host with the host pool.
 resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
   for i in range(0, sessionHosts.count): {
@@ -530,7 +546,7 @@ resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' 
         }
       }
     }
-    dependsOn: [entraJoin[i]]
+    dependsOn: [entraJoinCheck[i]]
   }
 ]
 
