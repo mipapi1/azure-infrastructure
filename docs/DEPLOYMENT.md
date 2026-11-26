@@ -90,6 +90,10 @@ Run every command from the repository root. The examples use `eastus`.
 
    ```bash
    az acr build -r <registry-name> -t web-app:1 apps
+   # If that fails with TasksOperationsNotAllowed (free-credit subscriptions block ACR Tasks), build locally:
+   #   az acr login -n <registry-name>
+   #   docker build --platform linux/amd64 -t <registry-name>.azurecr.io/web-app:1 apps
+   #   docker push <registry-name>.azurecr.io/web-app:1
    az aks command invoke -g rg-aks -n aks --file apps/web-app.yaml --command "kubectl apply -f web-app.yaml"
    ```
 
