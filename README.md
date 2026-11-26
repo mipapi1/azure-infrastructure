@@ -19,60 +19,14 @@ An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual D
 
 ## What gets deployed
 
-```mermaid
-flowchart LR
-  subgraph gov["governance (management groups)"]
-    mg["alz → alz-platform, alz-landingzones<br/>allowed locations · security benchmark"]
-  end
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/platform.dark.svg">
+  <img alt="Hub and spoke platform: governance, the hub with firewall and Bastion, and the image builder, jumpbox, AVD and AKS spokes" src="docs/diagrams/platform.light.svg">
+</picture>
+</p>
 
-  subgraph hub["rg-hub · vnet-hub 10.0.0.0/22"]
-    afw["Azure Firewall<br/>egress + DNS proxy"]
-    bas["Bastion"]
-    kv["Key Vault<br/>private endpoint"]
-    law["Log Analytics<br/>+ Sentinel"]
-    dns["Private DNS zones<br/>vault · file/blob · acr · postgres · gitlab.internal"]
-  end
-
-  subgraph aib["rg-image-builder · vnet-image-builder 10.4.0.0/24"]
-    it["Image Builder templates<br/>Win11 M365 (STIG optional) · Ubuntu 24.04 STIG"]
-    gal["Compute Gallery<br/>win11-avd · ubuntu-2404-stig"]
-  end
-
-  subgraph avd["rg-avd · vnet-avd 10.1.0.0/23"]
-    hp["Host pool · desktop · workspace"]
-    sh["Session hosts<br/>Entra-joined"]
-    fsl["FSLogix profiles<br/>Azure Files or blob Cloud Cache<br/>private endpoint"]
-  end
-
-  subgraph aks["rg-aks · vnet-aks"]
-    k8s["Private AKS<br/>Entra RBAC"]
-    acr["Container registry<br/>private endpoint"]
-    app["web-app"]
-    gl["GitLab (Helm)"]
-  end
-
-  subgraph jb["rg-jumpbox · vnet-jumpbox 10.3.0.0/24"]
-    vm["Ubuntu jumpbox<br/>hardened image · via Bastion"]
-  end
-
-  subgraph glrg["rg-gitlab"]
-    pg["PostgreSQL<br/>private endpoint"]
-  end
-
-  it --> gal --> sh
-  gal --> vm
-  hp --- sh
-  sh --> fsl
-  acr --> k8s --- app
-  k8s --- gl --> pg
-  sh -- "443 / 22" --> afw --> gl
-  avd <-. peering .-> hub
-  aks <-. peering .-> hub
-  aib <-. peering .-> hub
-  jb <-. peering .-> hub
-  afw -- logs --> law
-  afw --> internet(("Internet"))
-```
+<sub>🟨 governance &nbsp; 🟥 security and edge &nbsp; 🟦 network and compute &nbsp; 🟩 data and storage &nbsp; 🟪 monitoring &nbsp; 🟧 images and CI. Source: <a href="docs/diagrams/platform.mmd">docs/diagrams/platform.mmd</a>.</sub>
 
 Every spoke sends all traffic to the hub firewall (`0.0.0.0/0` route) and uses it as its DNS server, so the private DNS zones linked to the hub resolve everywhere. Each stack adds its own allow rules to the firewall policy as a rule collection group. Every spoke subnet has an IP group in `rg-hub` (`ipg-<spoke>-<subnet>`), and rules use those IP groups as their sources.
 
