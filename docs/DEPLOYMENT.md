@@ -57,6 +57,8 @@ Run every command from the repository root. The examples use `eastus`.
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
+   To add an app (VS Code is the example), put an install script in `image-builder/apps/`, add it to `windowsApps` or `linuxApps` in the param file with its installer's URL and SHA256, then run `publish.sh` and replace the template as below.
+
    Image templates can't be updated. To change one (a hardening setting, an installer, the build size), run `publish.sh` again, delete the template with `az image builder delete -g rg-image-builder -n <template>`, and deploy again. If `publish.sh` reports that `scripts.json` changed, commit it before deploying. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
 
 7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.

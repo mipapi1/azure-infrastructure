@@ -10,6 +10,14 @@
 // identity and checks every hash again.
 // Deploy into resource group rg-image-builder after the hub, run publish.sh, then run the templates.
 
+@description('An app installed in an image: a script in image-builder/apps/ and its installer (empty url: none).')
+type app = { script: string, installer: { url: string, sha256: string } }
+
+@description('Windows apps, installed before the STIG step. Each script gets the installer path as $args[0].')
+param windowsApps app[] = []
+@description('Ubuntu apps, installed before the STIG step. Each script runs as root and gets the installer path as $1.')
+param linuxApps app[] = []
+
 // Windows STIG (stig.ps1). Every choice is passed to the script; set them in main.bicepparam.
 @description('Apply DISA STIG hardening to the Windows image.')
 param windowsStig bool = false
@@ -164,19 +172,27 @@ var scripts = loadJsonContent('scripts.json')
 var blob = contentStorage.properties.primaryEndpoints.blob
 var winDir = 'C:\\BuildArtifacts'
 var linuxDir = '/var/tmp/build'
-var windowsInstallers = filter([windowsStigPackage, windowsLgpo, windowsScc], i => !empty(i.url))
+var windowsBootstrap = windowsStig || !empty(windowsApps)
 var windowsFiles = concat(
-  [{ uri: '${blob}scripts/stig.ps1', sha256: scripts['stig.ps1'], path: '${winDir}\\scripts\\stig.ps1' }],
-  map(windowsInstallers, i => {
+  windowsStig ? [{ uri: '${blob}scripts/stig.ps1', sha256: scripts['stig.ps1'], path: '${winDir}\\scripts\\stig.ps1' }] : [],
+  map(windowsApps, a => {
+    uri: '${blob}scripts/apps/${a.script}'
+    sha256: scripts['apps/${a.script}']
+    path: '${winDir}\\scripts\\apps\\${a.script}'
+  }),
+  map(filter(concat(windowsStig ? [windowsStigPackage, windowsLgpo, windowsScc] : [], map(windowsApps, a => a.installer)), i => !empty(i.url)), i => {
     uri: '${blob}installers/${last(split(i.url, '/'))}'
     sha256: i.sha256
     path: '${winDir}\\installers\\${last(split(i.url, '/'))}'
   })
 )
-var linuxInstallers = filter([linuxSsg, linuxScc], i => !empty(i.url))
 var linuxFiles = concat(
   ['${blob}scripts/stig-linux.sh ${scripts['stig-linux.sh']} ${linuxDir}/scripts/stig-linux.sh'],
-  map(linuxInstallers, i => '${blob}installers/${last(split(i.url, '/'))} ${i.sha256} ${linuxDir}/installers/${last(split(i.url, '/'))}')
+  map(linuxApps, a => '${blob}scripts/apps/${a.script} ${scripts['apps/${a.script}']} ${linuxDir}/scripts/apps/${a.script}'),
+  map(
+    filter(concat([linuxSsg, linuxScc], map(linuxApps, a => a.installer)), i => !empty(i.url)),
+    i => '${blob}installers/${last(split(i.url, '/'))} ${i.sha256} ${linuxDir}/installers/${last(split(i.url, '/'))}'
+  )
 )
 func winPath(url string) string => empty(url) ? '' : 'C:\\BuildArtifacts\\installers\\${last(split(url, '/'))}'
 func linuxPath(url string) string => empty(url) ? '' : '/var/tmp/build/installers/${last(split(url, '/'))}'
@@ -362,7 +378,7 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
         { type: 'WindowsUpdate', name: 'windows-update' }
         { type: 'WindowsRestart', name: 'restart' }
       ],
-      windowsStig
+      windowsBootstrap
         ? [
             {
               type: 'PowerShell'
@@ -376,6 +392,17 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
                 '& C:\\Windows\\Temp\\bootstrap.ps1 -FilesBase64 \'${base64(string(windowsFiles))}\' -ClientId \'${buildIdentity.properties.clientId}\'; exit $LASTEXITCODE'
               ]
             }
+          ]
+        : [],
+      map(windowsApps, a => {
+        type: 'PowerShell'
+        name: 'app-${a.script}'
+        runElevated: true
+        runAsSystem: true
+        inline: ['& ${winDir}\\scripts\\apps\\${a.script} \'${winPath(a.installer.url)}\'; exit $LASTEXITCODE']
+      }),
+      windowsStig
+        ? [
             {
               type: 'PowerShell'
               name: 'stig'
@@ -384,6 +411,9 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
               inline: ['& ${winDir}\\scripts\\stig.ps1 ${windowsStigArgs}; exit $LASTEXITCODE']
             }
           ]
+        : [],
+      windowsBootstrap
+        ? [{ type: 'PowerShell', name: 'cleanup', inline: ['Remove-Item -LiteralPath ${winDir} -Recurse -Force -ErrorAction SilentlyContinue'] }]
         : []
     )
     distribute: [
@@ -415,6 +445,22 @@ resource linuxDefinition 'Microsoft.Compute/galleries/images@2024-03-03' = {
   }
 }
 
+var linuxCustomize = [
+  {
+    type: 'Shell'
+    name: 'update'
+    inline: ['sudo DEBIAN_FRONTEND=noninteractive apt-get update -q', 'sudo DEBIAN_FRONTEND=noninteractive apt-get -y -q dist-upgrade']
+  }
+  {
+    type: 'Shell'
+    name: 'bootstrap'
+    inline: [
+      'echo ${base64(loadTextContent('bootstrap.sh'))} | base64 -d > /tmp/bootstrap.sh'
+      'sudo bash /tmp/bootstrap.sh ${buildIdentity.properties.clientId} ${base64(join(linuxFiles, '\n'))}'
+    ]
+  }
+]
+
 resource linuxTemplate 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
   name: 'it-ubuntu-2404-stig'
   location: location
@@ -432,26 +478,18 @@ resource linuxTemplate 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01
       sku: 'server'
       version: 'latest'
     }
-    customize: [
-      {
+    customize: concat(
+      linuxCustomize,
+      map(linuxApps, a => {
         type: 'Shell'
-        name: 'update'
-        inline: ['sudo DEBIAN_FRONTEND=noninteractive apt-get update -q', 'sudo DEBIAN_FRONTEND=noninteractive apt-get -y -q dist-upgrade']
-      }
-      {
-        type: 'Shell'
-        name: 'bootstrap'
-        inline: [
-          'echo ${base64(loadTextContent('bootstrap.sh'))} | base64 -d > /tmp/bootstrap.sh'
-          'sudo bash /tmp/bootstrap.sh ${buildIdentity.properties.clientId} ${base64(join(linuxFiles, '\n'))}'
-        ]
-      }
-      {
-        type: 'Shell'
-        name: 'stig'
-        inline: ['sudo ${linuxStigEnv} bash ${linuxDir}/scripts/stig-linux.sh']
-      }
-    ]
+        name: 'app-${a.script}'
+        inline: ['sudo bash ${linuxDir}/scripts/apps/${a.script} ${linuxPath(a.installer.url)}']
+      }),
+      [
+        { type: 'Shell', name: 'stig', inline: ['sudo ${linuxStigEnv} bash ${linuxDir}/scripts/stig-linux.sh'] }
+        { type: 'Shell', name: 'cleanup', inline: ['sudo rm -rf ${linuxDir}'] }
+      ]
+    )
     distribute: [
       {
         type: 'SharedImage'

@@ -82,5 +82,4 @@ oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_${profile} \
 awk -F'\t' '/^Result/ { n[\$2]++ } END { for (r in n) print r, n[r] }' /var/log/stig/scan.txt | sort
 EOF
 chmod 0750 /usr/local/sbin/stig-scan
-rm -rf /var/tmp/build
 echo "STIG: done. Run 'sudo stig-scan' on a VM built from this image."

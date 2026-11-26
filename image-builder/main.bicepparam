@@ -7,6 +7,32 @@ using 'main.bicep'
 // Your object ID (az ad signed-in-user show --query id -o tsv), so publish.sh can upload.
 param publisherIds = ['<publisher-object-id>']
 
+// Apps ------------------------------------------------------------------------------------------
+// To add an app: put an install script in image-builder/apps/ (copy install-vscode.ps1 or .sh),
+// add it here with its installer's download URL and SHA256, run publish.sh, then replace the
+// templates. The script gets the installer's local path ($args[0] on Windows, $1 on Ubuntu).
+// No installer to download? Use url: '' and sha256: ''.
+param windowsApps = [
+  {
+    script: 'install-vscode.ps1'
+    // Download: https://code.visualstudio.com/Download (System Installer, x64)
+    installer: {
+      url: 'https://vscode.download.prss.microsoft.com/dbazure/download/stable/661626d0e72f97806550790a98fb87116c9db825/VSCodeSetup-x64-1.148.0.exe'
+      sha256: '80e3c1814125f141afd5e196c22a831abfc5fdf4ee4087cf6b08c692e649f79c'
+    }
+  }
+]
+param linuxApps = [
+  {
+    script: 'install-vscode.sh'
+    // Download: https://code.visualstudio.com/Download (.deb, x64)
+    installer: {
+      url: 'https://vscode.download.prss.microsoft.com/dbazure/download/stable/661626d0e72f97806550790a98fb87116c9db825/code_1.148.0-1795526052_amd64.deb'
+      sha256: 'da33c10565e17b83f93508a365222f31bba116ab5c9e7bef7f562783943fd513'
+    }
+  }
+]
+
 // Windows 11 AVD image ------------------------------------------------------------------------
 // true: DISA STIG hardening (stig.ps1 lists what is left out and why).
 param windowsStig = false

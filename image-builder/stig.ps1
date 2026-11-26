@@ -165,5 +165,5 @@ while ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\
 Write-Output '>>> Sysprep complete ...'
 '@
 
-Remove-Item "$Env:TEMP\stig", "$Env:TEMP\lgpo", "C:\BuildArtifacts" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$Env:TEMP\stig", "$Env:TEMP\lgpo" -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "STIG: Ready. $($GpoNames.Count) GPO set(s) apply before sysprep."

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Publishes the image builder content to its storage account:
-#   1. Installers: every { url, sha256 } setting in main.bicepparam with a url is downloaded once to
-#      ~/.cache/image-builder, checked against its SHA256 and uploaded to the 'installers' container
-#      under its file name. Installers already published are skipped.
-#   2. Scripts: stig.ps1 and stig-linux.sh are uploaded to the 'scripts' container and their SHA256
-#      is written to scripts.json. The templates read scripts.json, and the build checks every file.
+#   1. Installers: every { url, sha256 } in main.bicepparam with a url (STIG content and the
+#      installers of windowsApps / linuxApps) is downloaded once to ~/.cache/image-builder, checked
+#      against its SHA256 and uploaded to the 'installers' container under its file name.
+#      Installers already published are skipped.
+#   2. Scripts: stig.ps1, stig-linux.sh and every script in apps/ are uploaded to the 'scripts'
+#      container and their SHA256 is written to scripts.json. The templates read scripts.json, and
+#      the build checks every file.
 # Your public IP is allowed on the storage firewall only while this runs.
 #
 # Run it after deploying image-builder, and again after changing a script or an installer. If it
@@ -21,14 +23,20 @@ sha() { if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a
 account=$(az storage account list -g "$rg" --query "[?starts_with(name, 'stimagebuilder')].name | [0]" -o tsv)
 [[ -n "$account" ]] || { echo "No stimagebuilder<suffix> storage account in $rg. Deploy image-builder first."; exit 1; }
 
-# One "url sha256" line per installer setting.
+# One "url sha256" line per installer, wherever it sits in the parameters.
 installers=$(az bicep build-params --file "$here/main.bicepparam" --stdout | python3 -I -c '
 import json, sys
-params = json.loads(json.load(sys.stdin)["parametersJson"])["parameters"]
-for value in (p["value"] for p in params.values()):
-    if isinstance(value, dict) and value.get("url") and value.get("sha256"):
-        print(value["url"], value["sha256"].lower())
-')
+def walk(value):
+    if isinstance(value, dict):
+        if value.get("url") and value.get("sha256"):
+            print(value["url"], value["sha256"].lower())
+        for v in value.values():
+            walk(v)
+    elif isinstance(value, list):
+        for v in value:
+            walk(v)
+walk({k: p["value"] for k, p in json.loads(json.load(sys.stdin)["parametersJson"])["parameters"].items()})
+' | sort -u)
 
 ip=$(curl -fsS https://api.ipify.org)
 echo "Allowing $ip on $account while publishing"
@@ -38,6 +46,7 @@ blob=(--account-name "$account" --auth-mode login --only-show-errors)
 until az storage container exists "${blob[@]}" -n installers -o none 2> /dev/null; do sleep 10; done
 
 while read -r url sha256; do
+  [[ -n "$url" ]] || continue
   name=${url##*/}
   if [[ $(az storage blob exists "${blob[@]}" -c installers -n "$name" --query exists -o tsv) == true ]]; then
     echo "installers/$name: already published"
@@ -51,7 +60,7 @@ while read -r url sha256; do
 done <<< "$installers"
 
 hashes=()
-for script in stig.ps1 stig-linux.sh; do
+for script in stig.ps1 stig-linux.sh $(cd "$here" && find apps -type f | sort); do
   az storage blob upload "${blob[@]}" -c scripts -n "$script" -f "$here/$script" --overwrite -o none
   hashes+=("$script=$(sha "$here/$script")")
   echo "scripts/$script: uploaded"
