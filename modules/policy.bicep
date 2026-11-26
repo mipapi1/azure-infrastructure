@@ -14,8 +14,12 @@ resource allowedLocations 'Microsoft.Authorization/policyAssignments@2025-03-01'
   }
 }
 
+// The initiative includes deployIfNotExists policies, so the assignment needs an identity.
+// It only audits here: no remediation roles are granted.
 resource securityBenchmark 'Microsoft.Authorization/policyAssignments@2025-03-01' = {
   name: 'security-benchmark'
+  location: location
+  identity: { type: 'SystemAssigned' }
   properties: {
     displayName: 'Microsoft cloud security benchmark'
     policyDefinitionId: tenantResourceId('Microsoft.Authorization/policySetDefinitions', '1f3afdf9-d0c9-4c3d-847f-89da613e70a8')

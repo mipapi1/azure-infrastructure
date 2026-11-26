@@ -1,5 +1,6 @@
 // Management groups, subscription placement and baseline policy.
-// Deploy at the tenant root management group (its ID is the tenant ID).
+// Deploy at management group alz, created first with az account management-group create
+// (docs/DEPLOYMENT.md): Azure checks permissions for the policy deployment before it exists.
 targetScope = 'managementGroup'
 
 param subscriptionId string

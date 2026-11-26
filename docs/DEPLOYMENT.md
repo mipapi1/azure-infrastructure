@@ -31,11 +31,11 @@ Run every command from the repository root. The examples use `eastus`.
    done
    ```
 
-4. Governance. Edit `governance/main.bicepparam`: `subscriptionId` (`az account show --query id -o tsv`).
+4. Governance. Edit `governance/main.bicepparam`: `subscriptionId` (`az account show --query id -o tsv`). You need Owner at the tenant root management group. Create the top management group first: Azure checks permissions for the policy deployment at `alz` before the template would create it.
 
    ```bash
-   az deployment mg create -m "$(az account show --query tenantId -o tsv)" -l eastus \
-     -f governance/main.bicep -p governance/main.bicepparam
+   az account management-group create -n alz --display-name "Azure Landing Zones"
+   az deployment mg create -m alz -l eastus -f governance/main.bicep -p governance/main.bicepparam
    ```
 
 5. Hub. Edit `hub/main.bicepparam`: `alertEmail`. The firewall takes 20 to 40 minutes.
