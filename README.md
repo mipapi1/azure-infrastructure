@@ -2,17 +2,20 @@
 
 An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual Desktop, AKS, a sample app and GitLab. Everything runs in one subscription and one region, and each stack finds the others by fixed resource names.
 
-| Folder | Deploys |
-|---|---|
-| `governance` | Management groups, subscription placement, two baseline policies |
-| `hub` | Hub network, Azure Firewall (egress and DNS for every spoke), Bastion, Log Analytics with Sentinel, Key Vault, budget |
-| `image-builder` | Image Builder spoke, Compute Gallery, templates for the AVD image (STIG optional) and a STIG-hardened Ubuntu image |
-| `jumpbox` | Jumpbox spoke and an Ubuntu VM from the hardened image (or Marketplace), reached through Bastion |
-| `avd` | AVD spoke, host pool, desktop, workspace, FSLogix profile storage, Entra-joined session hosts |
-| `aks` | AKS spoke, private cluster with Entra ID RBAC, private container registry |
-| `apps` | Sample web app (Dockerfile and Kubernetes manifest) |
-| `gitlab` | PostgreSQL for GitLab, DNS, firewall rules and Helm values |
-| `modules` | Small modules shared by the stacks |
+## What's inside
+
+| Folder | Scope | What it deploys |
+|---|---|---|
+| [`governance`](governance) | Management group | Management group hierarchy, subscription placement, allowed locations and the Microsoft cloud security benchmark |
+| [`hub`](hub) | Resource group `rg-hub` | Hub VNet, Azure Firewall with DNS proxy, Bastion, Log Analytics with Sentinel, Key Vault on a private endpoint, gateway and endpoint subnets, budget |
+| [`image-builder`](image-builder) | Resource group `rg-image-builder` | Image Builder spoke (build and container subnets behind the firewall), Compute Gallery, a Windows 11 AVD image (STIG optional) and a STIG-hardened Ubuntu 24.04 image |
+| [`jumpbox`](jumpbox) | Resource group `rg-jumpbox` | Jumpbox spoke and an Ubuntu VM from the hardened image (or Marketplace), reached through Bastion |
+| [`avd`](avd) | Resource group `rg-avd` | AVD spoke, pooled host pool, desktop, workspace, FSLogix profiles on Azure Files or blob Cloud Cache, Entra-joined session hosts |
+| [`aks`](aks) | Resource group `rg-aks` | AKS spoke, private cluster (Entra ID RBAC, CNI Overlay with Cilium, workload identity), container registry on a private endpoint |
+| [`apps`](apps) | Kubernetes | Sample web app: Dockerfile, page and manifest on an internal load balancer |
+| [`gitlab`](gitlab) | Resource group `rg-gitlab` + Kubernetes | PostgreSQL on a private endpoint, `gitlab.internal` DNS, firewall rules, and the Helm values for GitLab on AKS |
+| [`modules`](modules) | | Shared modules: spoke network with IP groups and firewall rules, hub peering, private DNS zone, budget, policy |
+| [`docs`](docs) | | [Deployment guide](docs/DEPLOYMENT.md) |
 
 ## What gets deployed
 
