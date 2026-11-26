@@ -1,5 +1,6 @@
 // Spoke network peered to vnet-hub. All traffic and DNS go through the hub firewall,
-// which gets this spoke's allow rules as its own rule collection group.
+// which gets this spoke's allow rules as its own rule collection group. Each subnet gets an
+// IP group in rg-hub (ipg-<name>-<subnet>) for rules to use as their source.
 
 param name string
 param addressPrefix string
@@ -77,6 +78,16 @@ module fromHub 'hub-peering.bicep' = {
   }
 }
 
+module ipGroups 'ip-groups.bicep' = {
+  name: 'ip-groups-${name}'
+  scope: resourceGroup('rg-hub')
+  params: {
+    name: name
+    subnets: subnets
+    location: location
+  }
+}
+
 module rules 'firewall-rules.bicep' = {
   name: 'firewall-rules-${name}'
   scope: resourceGroup('rg-hub')
@@ -85,6 +96,7 @@ module rules 'firewall-rules.bicep' = {
     priority: rulePriority
     ruleCollections: ruleCollections
   }
+  dependsOn: [ipGroups]
 }
 
 output vnetId string = vnet.id

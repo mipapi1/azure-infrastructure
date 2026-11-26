@@ -9,6 +9,7 @@ param vmSize string = 'Standard_B2s'
 param location string = resourceGroup().location
 
 var subnetPrefix = '10.3.0.0/24'
+var vmIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-jumpbox-snet-vm')
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-jumpbox'
@@ -29,7 +30,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'ubuntu-updates'
             protocols: [{ protocolType: 'Http', port: 80 }, { protocolType: 'Https', port: 443 }]
-            sourceAddresses: [subnetPrefix]
+            sourceIpGroups: [vmIpGroup]
             targetFqdns: ['azure.archive.ubuntu.com', 'archive.ubuntu.com', 'security.ubuntu.com', 'esm.ubuntu.com', 'motd.ubuntu.com']
           }
         ]

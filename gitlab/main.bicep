@@ -10,7 +10,9 @@ param location string = resourceGroup().location
 @description('PostgreSQL region. Defaults to location; set another region if the subscription is restricted from creating servers there. The private endpoint stays in the AKS spoke.')
 param postgresLocation string = location
 
-var nodePrefix = '10.2.0.0/24'
+// IP groups created with the AVD and AKS spokes.
+var avdHostsIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-avd-snet-hosts')
+var aksNodesIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-aks-snet-nodes')
 var ingressIp = '10.2.0.250'
 
 // GitLab signs in with the password; people sign in with Entra ID through the admin group.
@@ -129,7 +131,7 @@ module rules '../modules/firewall-rules.bicep' = {
             ruleType: 'NetworkRule'
             name: 'avd-to-gitlab'
             ipProtocols: ['TCP']
-            sourceAddresses: ['10.1.0.0/24']
+            sourceIpGroups: [avdHostsIpGroup]
             destinationAddresses: [ingressIp]
             destinationPorts: ['80', '22']
           }
@@ -145,7 +147,7 @@ module rules '../modules/firewall-rules.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'chart-and-images'
             protocols: [{ protocolType: 'Https', port: 443 }]
-            sourceAddresses: [nodePrefix]
+            sourceIpGroups: [aksNodesIpGroup]
             targetFqdns: [
               'charts.gitlab.io'
               'registry.gitlab.com'

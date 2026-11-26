@@ -9,6 +9,7 @@ param nodeCount int = 2
 param location string = resourceGroup().location
 
 var nodePrefix = '10.2.0.0/24'
+var nodesIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-aks-snet-nodes')
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-aks'
@@ -32,7 +33,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'NetworkRule'
             name: 'ntp'
             ipProtocols: ['UDP']
-            sourceAddresses: [nodePrefix]
+            sourceIpGroups: [nodesIpGroup]
             destinationFqdns: ['ntp.ubuntu.com']
             destinationPorts: ['123']
           }
@@ -48,7 +49,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'aks-required'
             protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-            sourceAddresses: [nodePrefix]
+            sourceIpGroups: [nodesIpGroup]
             fqdnTags: ['AzureKubernetesService']
           }
         ]
@@ -142,7 +143,7 @@ resource clusterAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // Public access stays on so `az acr build` can push; the cluster pulls through the private endpoint.
 resource registry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
-  name: 'cr${uniqueString(resourceGroup().id)}'
+  name: 'craks${uniqueString(resourceGroup().id)}'
   location: location
   sku: { name: 'Premium' }
   properties: {

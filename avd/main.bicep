@@ -20,6 +20,7 @@ param tokenStart string = utcNow()
 param location string = resourceGroup().location
 
 var subnetPrefix = '10.1.0.0/24'
+var hostsIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-avd-snet-hosts')
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-avd'
@@ -43,7 +44,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'NetworkRule'
             name: 'avd-services'
             ipProtocols: ['TCP']
-            sourceAddresses: [subnetPrefix]
+            sourceIpGroups: [hostsIpGroup]
             destinationAddresses: ['WindowsVirtualDesktop', 'AzureMonitor', 'AzureActiveDirectory']
             destinationPorts: ['443']
           }
@@ -51,7 +52,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'NetworkRule'
             name: 'windows-activation'
             ipProtocols: ['TCP']
-            sourceAddresses: [subnetPrefix]
+            sourceIpGroups: [hostsIpGroup]
             destinationFqdns: ['azkms.${environment().suffixes.storage}', 'kms.${environment().suffixes.storage}']
             destinationPorts: ['1688']
           }
@@ -67,14 +68,14 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'avd-fqdn-tags'
             protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-            sourceAddresses: [subnetPrefix]
+            sourceIpGroups: [hostsIpGroup]
             fqdnTags: ['WindowsVirtualDesktop', 'WindowsUpdate', 'WindowsDiagnostics', 'MicrosoftActiveProtectionService']
           }
           {
             ruleType: 'ApplicationRule'
             name: 'certificate-revocation'
             protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-            sourceAddresses: [subnetPrefix]
+            sourceIpGroups: [hostsIpGroup]
             targetFqdns: ['oneocsp.microsoft.com', 'www.microsoft.com', 'ctldl.windowsupdate.com']
           }
         ]

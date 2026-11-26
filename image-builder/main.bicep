@@ -14,6 +14,8 @@ param location string = resourceGroup().location
 
 var buildPrefix = '10.4.0.0/25'
 var containerPrefix = '10.4.0.128/27'
+var buildIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-build')
+var containerIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-container')
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-image-builder'
@@ -37,7 +39,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'NetworkRule'
             name: 'windows-activation'
             ipProtocols: ['TCP']
-            sourceAddresses: [buildPrefix]
+            sourceIpGroups: [buildIpGroup]
             destinationFqdns: ['azkms.${environment().suffixes.storage}', 'kms.${environment().suffixes.storage}']
             destinationPorts: ['1688']
           }
@@ -45,7 +47,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'NetworkRule'
             name: 'ntp'
             ipProtocols: ['UDP']
-            sourceAddresses: [buildPrefix]
+            sourceIpGroups: [buildIpGroup]
             destinationFqdns: ['time.windows.com', 'ntp.ubuntu.com']
             destinationPorts: ['123']
           }
@@ -62,7 +64,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'image-builder-container'
             protocols: [{ protocolType: 'Https', port: 443 }]
-            sourceAddresses: [containerPrefix]
+            sourceIpGroups: [containerIpGroup]
             targetFqdns: [
               split(environment().resourceManager, '/')[2]
               split(environment().authentication.loginEndpoint, '/')[2]
@@ -76,7 +78,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'os-updates'
             protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-            sourceAddresses: [buildPrefix]
+            sourceIpGroups: [buildIpGroup]
             fqdnTags: ['WindowsUpdate', 'WindowsDiagnostics', 'MicrosoftActiveProtectionService']
           }
           {
@@ -84,7 +86,7 @@ module spoke '../modules/spoke.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'build-downloads'
             protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
-            sourceAddresses: [buildPrefix]
+            sourceIpGroups: [buildIpGroup]
             targetFqdns: [
               'go.microsoft.com'
               'definitionupdates.microsoft.com'
