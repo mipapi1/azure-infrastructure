@@ -1,63 +1,75 @@
-// Compute Gallery and Image Builder templates for two images:
-//   win11-avd         AVD session hosts: Windows 11 multi-session with Microsoft 365 Apps, fully
-//                     patched, optionally STIG-hardened (windowsStig, stig.ps1).
-//   ubuntu-2404-stig  Linux VMs: Ubuntu 24.04 LTS, patched and STIG-hardened (stig-linux.sh).
+// Image Builder: one image per deployment, described by its own param file in images/.
+// Each deployment creates or updates the shared parts (spoke, storage, identities, gallery) and
+// its own gallery image definition and template, named after the image:
+//   images/win11-avd.bicepparam         gallery definition win11-avd, template it-win11-avd
+//   images/ubuntu-2404-stig.bicepparam  gallery definition ubuntu-2404-stig, template it-ubuntu-2404-stig
 // Builds run in a spoke peered to the hub: the build VM and Image Builder's container (Packer) sit in
 // their own subnets and reach the internet only through the hub firewall, which allows the
 // endpoints below. Scripts and installers come from this stack's storage account over a private
 // endpoint: publish.sh downloads every installer, checks its SHA256 and uploads it with the
 // scripts; the first build step (bootstrap.ps1 / bootstrap.sh) downloads them with the build VM's
 // identity and checks every hash again.
-// Deploy into resource group rg-image-builder after the hub, run publish.sh, then run the templates.
+// Deploy into resource group rg-image-builder after the hub, run publish.sh, then run the template.
 
-@description('An app installed in an image: a script in image-builder/apps/ and its installer (empty url: none).')
-type app = { script: string, installer: { url: string, sha256: string } }
+@description('A downloadable file and its SHA256. Empty url: none.')
+type download = { url: string, sha256: string }
 
-@description('Windows apps, installed before the STIG step. Each script gets the installer path as $args[0].')
-param windowsApps app[] = []
-@description('Ubuntu apps, installed before the STIG step. Each script runs as root and gets the installer path as $1.')
-param linuxApps app[] = []
+@description('An app: an install script in image-builder/apps/ and its installer.')
+type app = { script: string, installer: download }
 
-// Windows STIG (stig.ps1). Every choice is passed to the script; set them in main.bicepparam.
-@description('Apply DISA STIG hardening to the Windows image.')
-param windowsStig bool = false
+@description('''The image to build. name is used for the gallery definition and the template (it-<name>).
+source is a Marketplace image: az vm image list-skus -l <region> -p <publisher> -f <offer> -o table.''')
+param image {
+  name: string
+  os: ('Windows' | 'Linux')
+  source: { publisher: string, offer: string, sku: string, version: string }
+}
+
+@description('Apps installed before the STIG step. Windows scripts get the installer path as $args[0]; Linux scripts run as root and get it as $1.')
+param apps app[] = []
+
+@description('Apply STIG hardening: the DISA GPO package on Windows (stig.ps1), the SCAP Security Guide on Linux (stig-linux.sh).')
+param stig bool = false
+
+// Windows STIG. The defaults are pinned here, so image param files only override what they need.
 @description('GPO folders from the DISA package, matched as "DoD <name> ...".')
 param windowsStigGpos string[] = ['Windows 11', 'Windows Defender Firewall', 'Microsoft Defender Antivirus', 'Microsoft Edge']
 @description('Also apply STIG and baseline settings the GPO package does not set (TLS, .NET crypto, DEP, PowerShell 2.0, auditing).')
 param windowsStigSupplemental bool = true
-@description('DISA STIG GPO package and its SHA256.')
-param windowsStigPackage { url: string, sha256: string } = {
+@description('DISA STIG GPO package. Download: https://public.cyber.mil/stigs/gpo/')
+param windowsStigPackage download = {
   url: 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_October_2026.zip'
   sha256: 'C8A093C0656CCF6D71D98A9556AA37E0F4E31574AC2AAC86F76D7D14355167BA'
 }
-@description('Microsoft LGPO (imports the GPOs) and its SHA256.')
-param windowsLgpo { url: string, sha256: string } = {
+@description('Microsoft LGPO, which imports the GPOs. Download: https://www.microsoft.com/download/details.aspx?id=55319')
+param windowsLgpo download = {
   url: 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
   sha256: 'CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55'
 }
-@description('DISA SCAP Compliance Checker bundle and its SHA256. Empty url: not installed.')
-param windowsScc { url: string, sha256: string } = {
+@description('DISA SCAP Compliance Checker, installed for scans. Download: https://public.cyber.mil/stigs/scap/')
+param windowsScc download = {
   url: 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/scc-5.15_Windows_bundle.zip'
   sha256: 'A537A0F9A39CCC2231818709F8BB5F8F9B9CBFC2EC0D44DBBFABBE35D4F558BA'
 }
 
-// Ubuntu STIG (stig-linux.sh), always applied to the Linux image.
+// Linux STIG (Ubuntu).
 @description('SCAP Security Guide profile id, e.g. stig or cis_level1_server.')
 param linuxStigProfile string = 'stig'
-@description('SSG rule ids not applied. Each one is a finding to justify.')
+@description('SSG rule ids not applied. Each one is a finding; stig-linux.sh explains the defaults.')
 param linuxStigExcludes string[] = ['sudo_remove_nopasswd', 'sudo_require_authentication']
-@description('SCAP Security Guide release and the SHA256 of its zip.')
-param linuxSsg { url: string, sha256: string } = {
+@description('SCAP Security Guide release. Download: https://github.com/ComplianceAsCode/content/releases')
+param linuxSsg download = {
   url: 'https://github.com/ComplianceAsCode/content/releases/download/v0.1.82/scap-security-guide-0.1.82.zip'
   sha256: '765e84bdce7f9055f9b9c2dd0ee2b713d4255f8eec94eac6d35ea4973c28919c'
 }
-@description('Optional DISA SCC bundle for Linux (a zip with a .deb) and its SHA256. Empty url: not installed.')
-param linuxScc { url: string, sha256: string } = { url: '', sha256: '' }
+@description('DISA SCC for Linux (a zip with a .deb). The download needs a DoD login, so host it yourself.')
+param linuxScc download = { url: '', sha256: '' }
 
 @description('Object IDs allowed to publish scripts and installers (Storage Blob Data Contributor).')
 param publisherIds string[] = []
 @description('Build VM size. Two builds at 2 vCPUs each fit a 4 vCPU regional quota.')
 param buildVmSize string = 'Standard_D2s_v5'
+param buildTimeoutInMinutes int = 240
 param location string = resourceGroup().location
 
 var buildPrefix = '10.4.0.0/25'
@@ -168,54 +180,121 @@ module spoke '../modules/spoke.bicep' = {
 
 // Files the bootstrap step downloads from storage and checks. Installers are stored under their
 // file name (publish.sh); script hashes come from scripts.json (publish.sh writes it).
+var windows = image.os == 'Windows'
 var scripts = loadJsonContent('scripts.json')
 var blob = contentStorage.properties.primaryEndpoints.blob
-var winDir = 'C:\\BuildArtifacts'
-var linuxDir = '/var/tmp/build'
-var windowsBootstrap = windowsStig || !empty(windowsApps)
-var windowsFiles = concat(
-  windowsStig ? [{ uri: '${blob}scripts/stig.ps1', sha256: scripts['stig.ps1'], path: '${winDir}\\scripts\\stig.ps1' }] : [],
-  map(windowsApps, a => {
+var dir = windows ? 'C:\\BuildArtifacts' : '/var/tmp/build'
+var sep = windows ? '\\' : '/'
+var stigScript = windows ? 'stig.ps1' : 'stig-linux.sh'
+var stigInstallers = windows ? [windowsStigPackage, windowsLgpo, windowsScc] : [linuxSsg, linuxScc]
+func fileName(url string) string => last(split(url, '/'))
+func localPath(url string, root string, sep string) string => empty(url) ? '' : '${root}${sep}installers${sep}${last(split(url, '/'))}'
+
+var files = concat(
+  stig ? [{ uri: '${blob}scripts/${stigScript}', sha256: scripts[stigScript], path: '${dir}${sep}scripts${sep}${stigScript}' }] : [],
+  map(apps, a => {
     uri: '${blob}scripts/apps/${a.script}'
     sha256: scripts['apps/${a.script}']
-    path: '${winDir}\\scripts\\apps\\${a.script}'
+    path: '${dir}${sep}scripts${sep}apps${sep}${a.script}'
   }),
-  map(filter(concat(windowsStig ? [windowsStigPackage, windowsLgpo, windowsScc] : [], map(windowsApps, a => a.installer)), i => !empty(i.url)), i => {
-    uri: '${blob}installers/${last(split(i.url, '/'))}'
+  map(filter(concat(stig ? stigInstallers : [], map(apps, a => a.installer)), i => !empty(i.url)), i => {
+    uri: '${blob}installers/${fileName(i.url)}'
     sha256: i.sha256
-    path: '${winDir}\\installers\\${last(split(i.url, '/'))}'
+    path: localPath(i.url, dir, sep)
   })
 )
-var linuxFiles = concat(
-  ['${blob}scripts/stig-linux.sh ${scripts['stig-linux.sh']} ${linuxDir}/scripts/stig-linux.sh'],
-  map(linuxApps, a => '${blob}scripts/apps/${a.script} ${scripts['apps/${a.script}']} ${linuxDir}/scripts/apps/${a.script}'),
-  map(
-    filter(concat([linuxSsg, linuxScc], map(linuxApps, a => a.installer)), i => !empty(i.url)),
-    i => '${blob}installers/${last(split(i.url, '/'))} ${i.sha256} ${linuxDir}/installers/${last(split(i.url, '/'))}'
-  )
-)
-func winPath(url string) string => empty(url) ? '' : 'C:\\BuildArtifacts\\installers\\${last(split(url, '/'))}'
-func linuxPath(url string) string => empty(url) ? '' : '/var/tmp/build/installers/${last(split(url, '/'))}'
+var bootstrap = !empty(files)
 
 // Arguments for stig.ps1 and environment for stig-linux.sh, built from the parameters above.
 var windowsStigArgs = join(
   [
     '-GpoNames @(${join(map(windowsStigGpos, g => '\'${g}\''), ',')})'
-    '-PackagePath \'${winPath(windowsStigPackage.url)}\''
-    '-LgpoPath \'${winPath(windowsLgpo.url)}\''
+    '-PackagePath \'${localPath(windowsStigPackage.url, dir, sep)}\''
+    '-LgpoPath \'${localPath(windowsLgpo.url, dir, sep)}\''
     '-Supplemental $${windowsStigSupplemental}'
-    '-SccPath \'${winPath(windowsScc.url)}\''
+    '-SccPath \'${localPath(windowsScc.url, dir, sep)}\''
   ],
   ' '
 )
 var linuxStigEnv = join(
   [
-    'SSG_ZIP=${linuxPath(linuxSsg.url)}'
+    'SSG_ZIP=${localPath(linuxSsg.url, dir, sep)}'
     'STIG_PROFILE=${linuxStigProfile}'
     'STIG_EXCLUDES="${join(linuxStigExcludes, ' ')}"'
-    'SCC_ZIP="${linuxPath(linuxScc.url)}"'
+    'SCC_ZIP="${localPath(linuxScc.url, dir, sep)}"'
   ],
   ' '
+)
+
+// Build steps: OS updates, bootstrap, apps, STIG, cleanup.
+var windowsSteps = concat(
+  [
+    { type: 'WindowsUpdate', name: 'windows-update' }
+    { type: 'WindowsRestart', name: 'restart' }
+  ],
+  bootstrap
+    ? [
+        {
+          type: 'PowerShell'
+          name: 'bootstrap'
+          runElevated: true
+          runAsSystem: true
+          // Written to a file and run: Packer indents inline lines, which breaks some PowerShell.
+          inline: [
+            '$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(\'${base64(loadTextContent('bootstrap.ps1'))}\'))'
+            'Set-Content -LiteralPath C:\\Windows\\Temp\\bootstrap.ps1 -Value $s -Encoding UTF8'
+            '& C:\\Windows\\Temp\\bootstrap.ps1 -FilesBase64 \'${base64(string(files))}\' -ClientId \'${buildIdentity.properties.clientId}\'; exit $LASTEXITCODE'
+          ]
+        }
+      ]
+    : [],
+  map(apps, a => {
+    type: 'PowerShell'
+    name: 'app-${a.script}'
+    runElevated: true
+    runAsSystem: true
+    inline: ['& ${dir}\\scripts\\apps\\${a.script} \'${localPath(a.installer.url, dir, sep)}\'; exit $LASTEXITCODE']
+  }),
+  stig
+    ? [
+        {
+          type: 'PowerShell'
+          name: 'stig'
+          runElevated: true
+          runAsSystem: true
+          inline: ['& ${dir}\\scripts\\stig.ps1 ${windowsStigArgs}; exit $LASTEXITCODE']
+        }
+      ]
+    : [],
+  bootstrap ? [{ type: 'PowerShell', name: 'cleanup', inline: ['Remove-Item -LiteralPath ${dir} -Recurse -Force -ErrorAction SilentlyContinue'] }] : []
+)
+var linuxSteps = concat(
+  [
+    {
+      type: 'Shell'
+      name: 'update'
+      inline: ['sudo DEBIAN_FRONTEND=noninteractive apt-get update -q', 'sudo DEBIAN_FRONTEND=noninteractive apt-get -y -q dist-upgrade']
+    }
+  ],
+  bootstrap
+    ? [
+        {
+          type: 'Shell'
+          name: 'bootstrap'
+          inline: [
+            'echo ${base64(loadTextContent('bootstrap.sh'))} | base64 -d > /tmp/bootstrap.sh'
+            'sudo bash /tmp/bootstrap.sh ${buildIdentity.properties.clientId} ${base64(join(map(files, f => '${f.uri} ${f.sha256} ${f.path}'), '\n'))}'
+          ]
+        }
+      ]
+    : [],
+  map(apps, a => {
+    type: 'Shell'
+    name: 'app-${a.script}'
+    inline: ['sudo bash ${dir}/scripts/apps/${a.script} ${localPath(a.installer.url, dir, sep)}']
+  }),
+  stig ? [{ type: 'Shell', name: 'stig', inline: ['sudo ${linuxStigEnv} bash ${dir}/scripts/stig-linux.sh'] }] : [],
+  bootstrap ? [{ type: 'Shell', name: 'cleanup', inline: ['sudo rm -rf ${dir}'] }] : []
 )
 
 var vnetConfig = {
@@ -339,162 +418,40 @@ resource gallery 'Microsoft.Compute/galleries@2024-03-03' = {
   location: location
 }
 
-resource imageDefinition 'Microsoft.Compute/galleries/images@2024-03-03' = {
+resource definition 'Microsoft.Compute/galleries/images@2024-03-03' = {
   parent: gallery
-  name: 'win11-avd'
+  name: image.name
   location: location
   properties: {
-    osType: 'Windows'
+    osType: image.os
     osState: 'Generalized'
     hyperVGeneration: 'V2'
     features: [{ name: 'SecurityType', value: 'TrustedLaunch' }]
     identifier: {
       publisher: 'platform'
-      offer: 'windows-11'
-      sku: 'win11-avd'
+      offer: toLower(image.os)
+      sku: image.name
     }
   }
 }
 
 resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
-  name: 'it-win11-avd'
+  name: 'it-${image.name}'
   location: location
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${identity.id}': {} }
   }
   properties: {
-    buildTimeoutInMinutes: 240
+    buildTimeoutInMinutes: buildTimeoutInMinutes
     vmProfile: { vmSize: buildVmSize, vnetConfig: vnetConfig, userAssignedIdentities: [buildIdentity.id] }
-    source: {
-      type: 'PlatformImage'
-      publisher: 'MicrosoftWindowsDesktop'
-      offer: 'office-365'
-      sku: 'win11-25h2-avd-m365'
-      version: 'latest'
-    }
-    customize: concat(
-      [
-        { type: 'WindowsUpdate', name: 'windows-update' }
-        { type: 'WindowsRestart', name: 'restart' }
-      ],
-      windowsBootstrap
-        ? [
-            {
-              type: 'PowerShell'
-              name: 'bootstrap'
-              runElevated: true
-              runAsSystem: true
-              // Written to a file and run: Packer indents inline lines, which breaks some PowerShell.
-              inline: [
-                '$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(\'${base64(loadTextContent('bootstrap.ps1'))}\'))'
-                'Set-Content -LiteralPath C:\\Windows\\Temp\\bootstrap.ps1 -Value $s -Encoding UTF8'
-                '& C:\\Windows\\Temp\\bootstrap.ps1 -FilesBase64 \'${base64(string(windowsFiles))}\' -ClientId \'${buildIdentity.properties.clientId}\'; exit $LASTEXITCODE'
-              ]
-            }
-          ]
-        : [],
-      map(windowsApps, a => {
-        type: 'PowerShell'
-        name: 'app-${a.script}'
-        runElevated: true
-        runAsSystem: true
-        inline: ['& ${winDir}\\scripts\\apps\\${a.script} \'${winPath(a.installer.url)}\'; exit $LASTEXITCODE']
-      }),
-      windowsStig
-        ? [
-            {
-              type: 'PowerShell'
-              name: 'stig'
-              runElevated: true
-              runAsSystem: true
-              inline: ['& ${winDir}\\scripts\\stig.ps1 ${windowsStigArgs}; exit $LASTEXITCODE']
-            }
-          ]
-        : [],
-      windowsBootstrap
-        ? [{ type: 'PowerShell', name: 'cleanup', inline: ['Remove-Item -LiteralPath ${winDir} -Recurse -Force -ErrorAction SilentlyContinue'] }]
-        : []
-    )
+    source: union({ type: 'PlatformImage' }, image.source)
+    customize: windows ? windowsSteps : linuxSteps
     distribute: [
       {
         type: 'SharedImage'
-        galleryImageId: imageDefinition.id
-        runOutputName: 'win11-avd'
-        replicationRegions: [location]
-      }
-    ]
-  }
-  dependsOn: [identityAccess, buildRead, storageDns]
-}
-
-resource linuxDefinition 'Microsoft.Compute/galleries/images@2024-03-03' = {
-  parent: gallery
-  name: 'ubuntu-2404-stig'
-  location: location
-  properties: {
-    osType: 'Linux'
-    osState: 'Generalized'
-    hyperVGeneration: 'V2'
-    features: [{ name: 'SecurityType', value: 'TrustedLaunch' }]
-    identifier: {
-      publisher: 'platform'
-      offer: 'ubuntu-24_04'
-      sku: 'ubuntu-2404-stig'
-    }
-  }
-}
-
-var linuxCustomize = [
-  {
-    type: 'Shell'
-    name: 'update'
-    inline: ['sudo DEBIAN_FRONTEND=noninteractive apt-get update -q', 'sudo DEBIAN_FRONTEND=noninteractive apt-get -y -q dist-upgrade']
-  }
-  {
-    type: 'Shell'
-    name: 'bootstrap'
-    inline: [
-      'echo ${base64(loadTextContent('bootstrap.sh'))} | base64 -d > /tmp/bootstrap.sh'
-      'sudo bash /tmp/bootstrap.sh ${buildIdentity.properties.clientId} ${base64(join(linuxFiles, '\n'))}'
-    ]
-  }
-]
-
-resource linuxTemplate 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
-  name: 'it-ubuntu-2404-stig'
-  location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${identity.id}': {} }
-  }
-  properties: {
-    buildTimeoutInMinutes: 120
-    vmProfile: { vmSize: buildVmSize, vnetConfig: vnetConfig, userAssignedIdentities: [buildIdentity.id] }
-    source: {
-      type: 'PlatformImage'
-      publisher: 'Canonical'
-      offer: 'ubuntu-24_04-lts'
-      sku: 'server'
-      version: 'latest'
-    }
-    customize: concat(
-      linuxCustomize,
-      map(linuxApps, a => {
-        type: 'Shell'
-        name: 'app-${a.script}'
-        inline: ['sudo bash ${linuxDir}/scripts/apps/${a.script} ${linuxPath(a.installer.url)}']
-      }),
-      [
-        { type: 'Shell', name: 'stig', inline: ['sudo ${linuxStigEnv} bash ${linuxDir}/scripts/stig-linux.sh'] }
-        { type: 'Shell', name: 'cleanup', inline: ['sudo rm -rf ${linuxDir}'] }
-      ]
-    )
-    distribute: [
-      {
-        type: 'SharedImage'
-        galleryImageId: linuxDefinition.id
-        runOutputName: 'ubuntu-2404-stig'
+        galleryImageId: definition.id
+        runOutputName: image.name
         replicationRegions: [location]
       }
     ]

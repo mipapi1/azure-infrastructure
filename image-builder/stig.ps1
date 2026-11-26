@@ -1,5 +1,5 @@
 # DISA STIG hardening for the Windows 11 AVD image. Runs as the last Image Builder step when
-# `windowsStig = true` in main.bicepparam.
+# `stig = true` in its image param file (images/).
 #
 # How it works:
 #   1. bootstrap.ps1 has already downloaded the DISA GPO package, LGPO and SCC from the image builder
@@ -12,7 +12,7 @@
 #      network logon to local accounts, which would cut off Image Builder's WinRM session if it were
 #      applied earlier.
 #
-# Every choice comes from image-builder/main.bicepparam: which GPOs, the GPO package, LGPO, the
+# Every choice comes from the image param file and main.bicep defaults: which GPOs, the GPO package, LGPO, the
 # supplemental settings, and the DISA SCAP Compliance Checker (SCC). New GPO package: DISA releases
 # one each quarter; update windowsStigPackage and run publish.sh.
 #

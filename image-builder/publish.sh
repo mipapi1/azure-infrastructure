@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Publishes the image builder content to its storage account:
-#   1. Installers: every { url, sha256 } in main.bicepparam with a url (STIG content and the
-#      installers of windowsApps / linuxApps) is downloaded once to ~/.cache/image-builder, checked
-#      against its SHA256 and uploaded to the 'installers' container under its file name.
-#      Installers already published are skipped.
+#   1. Installers: every { url, sha256 } with a url in the image param files (default: all of
+#      images/) and the pinned STIG defaults in main.bicep is downloaded once to
+#      ~/.cache/image-builder, checked against its SHA256 and uploaded to the 'installers'
+#      container under its file name. Installers already published are skipped.
 #   2. Scripts: stig.ps1, stig-linux.sh and every script in apps/ are uploaded to the 'scripts'
 #      container and their SHA256 is written to scripts.json. The templates read scripts.json, and
 #      the build checks every file.
 # Your public IP is allowed on the storage firewall only while this runs.
 #
+# Usage: ./image-builder/publish.sh [images/<name>.bicepparam ...]
 # Run it after deploying image-builder, and again after changing a script or an installer. If it
-# changes scripts.json, delete the templates and deploy image-builder again (templates can't be updated).
-# Needs az (signed in; publisherIds in main.bicepparam grants the upload role), curl and python3.
+# changes scripts.json, delete the template and deploy the image again (templates can't be updated).
+# Needs az (signed in; publisherIds in the image param files grants the upload role), curl and python3.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 rg=rg-image-builder
@@ -23,8 +24,11 @@ sha() { if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a
 account=$(az storage account list -g "$rg" --query "[?starts_with(name, 'stimagebuilder')].name | [0]" -o tsv)
 [[ -n "$account" ]] || { echo "No stimagebuilder<suffix> storage account in $rg. Deploy image-builder first."; exit 1; }
 
-# One "url sha256" line per installer, wherever it sits in the parameters.
-installers=$(az bicep build-params --file "$here/main.bicepparam" --stdout | python3 -I -c '
+images=("$@")
+[[ ${#images[@]} -gt 0 ]] || images=("$here"/images/*.bicepparam)
+
+# One "url sha256" line per installer, wherever it sits in the parameters or their defaults.
+installers=$(for f in "${images[@]}"; do az bicep build-params --file "$f" --stdout; done | python3 -I -c '
 import json, sys
 def walk(value):
     if isinstance(value, dict):
@@ -35,7 +39,14 @@ def walk(value):
     elif isinstance(value, list):
         for v in value:
             walk(v)
-walk({k: p["value"] for k, p in json.loads(json.load(sys.stdin)["parametersJson"])["parameters"].items()})
+text, decoder, pos = sys.stdin.read(), json.JSONDecoder(), 0
+while pos < len(text.strip()):
+    out, pos = decoder.raw_decode(text, pos)
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    defaults = {k: p.get("defaultValue") for k, p in json.loads(out["templateJson"])["parameters"].items()}
+    values = {k: p["value"] for k, p in json.loads(out["parametersJson"])["parameters"].items()}
+    walk({**defaults, **values})
 ' | sort -u)
 
 ip=$(curl -fsS https://api.ipify.org)
@@ -54,7 +65,7 @@ while read -r url sha256; do
   fi
   file="$cache/$name"
   [[ -f "$file" && $(sha "$file") == "$sha256" ]] || { echo "Downloading $url"; curl -fsSL -o "$file" "$url"; }
-  [[ $(sha "$file") == "$sha256" ]] || { echo "SHA256 mismatch for $url: got $(sha "$file"). Fix main.bicepparam."; exit 1; }
+  [[ $(sha "$file") == "$sha256" ]] || { echo "SHA256 mismatch for $url: got $(sha "$file"). Fix the param file."; exit 1; }
   az storage blob upload "${blob[@]}" -c installers -n "$name" -f "$file" --metadata sha256="$sha256" -o none
   echo "installers/$name: uploaded"
 done <<< "$installers"

@@ -4,7 +4,7 @@
 # `excludes`, and installs `stig-scan` to check a VM built from the image.
 #
 # bootstrap.sh has already downloaded the installers from the image builder storage account and
-# checked their SHA256. Settings come from image-builder/main.bicepparam as environment variables:
+# checked their SHA256. Settings come from the image param file (images/) as environment variables:
 #   SSG_ZIP          SCAP Security Guide release zip (linuxSsg)
 #   STIG_PROFILE     SSG profile id (linuxStigProfile), e.g. stig or cis_level1_server
 #   STIG_EXCLUDES    space-separated rule ids not applied (linuxStigExcludes)

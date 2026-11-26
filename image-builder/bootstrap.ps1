@@ -1,7 +1,7 @@
 # First Image Builder step on Windows. Downloads the build scripts and installers from the image
 # builder storage account with the build VM's managed identity (over the private endpoint) and checks
 # each file's SHA256 against the value in the template. Any mismatch stops the build.
-# Embedded in the template by main.bicep; the file list comes from main.bicepparam and scripts.json.
+# Embedded in the template by main.bicep; the file list comes from the image param file and scripts.json.
 param(
     # Base64 JSON: [{ "uri": "...", "sha256": "...", "path": "C:\\BuildArtifacts\\..." }]
     [Parameter(Mandatory)][string]$FilesBase64,
