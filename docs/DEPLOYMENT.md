@@ -45,15 +45,30 @@ Run every command from the repository root. The examples use `eastus`.
    az deployment group create -g rg-hub -f hub/main.bicep -p hub/main.bicepparam
    ```
 
-6. Image Builder. For a STIG-hardened image, set `stig = true` in `image-builder/main.bicepparam`. The image build takes 1 to 2 hours.
+6. Image Builder. For a STIG-hardened Windows image, set `stig = true` in `image-builder/main.bicepparam`; the Ubuntu image is always hardened. Each build takes 1 to 2 hours. Run them one after the other: each build's container needs most of the default 4-core Container Instances quota.
 
    ```bash
    az group create -n rg-image-builder -l eastus
    az deployment group create -g rg-image-builder -f image-builder/main.bicep -p image-builder/main.bicepparam
+   az image builder run -g rg-image-builder -n it-ubuntu-2404-stig
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
-7. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins). FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
+   If a build fails with `SkuNotAvailable`, pick a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`, delete the templates (`az image builder delete`) and redeploy with `-p buildVmSize=<size>`.
+
+7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/jumpbox
+   export JUMPBOX_SSH_PUBLIC_KEY="$(cat ~/.ssh/jumpbox.pub)"
+   az group create -n rg-jumpbox -l eastus
+   az deployment group create -g rg-jumpbox -f jumpbox/main.bicep -p jumpbox/main.bicepparam
+   az network bastion ssh -g rg-hub -n bas-hub --target-resource-id "$(az vm show -g rg-jumpbox -n vm-jumpbox --query id -o tsv)" \
+     --auth-type ssh-key --username azureuser --ssh-key ~/.ssh/jumpbox
+   sudo stig-scan
+   ```
+
+8. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins). FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
 
    ```bash
    export AVD_ADMIN_PASSWORD='<session host local admin password>'
@@ -63,7 +78,7 @@ Run every command from the repository root. The examples use `eastus`.
 
    Sign in at <https://windows.cloud.microsoft> as a member of avd-users. Your profile is saved by FSLogix and follows you to any session host.
 
-8. AKS. Edit `aks/main.bicepparam`: `adminGroupId` (aks-admins).
+9. AKS. Edit `aks/main.bicepparam`: `adminGroupId` (aks-admins).
 
    ```bash
    az group create -n rg-aks -l eastus
@@ -71,14 +86,14 @@ Run every command from the repository root. The examples use `eastus`.
    az aks command invoke -g rg-aks -n aks --command "kubectl get nodes"
    ```
 
-9. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query [0].name -o tsv`).
+10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query [0].name -o tsv`).
 
    ```bash
    az acr build -r <registry-name> -t web-app:1 apps
    az aks command invoke -g rg-aks -n aks --file apps/web-app.yaml --command "kubectl apply -f web-app.yaml"
    ```
 
-10. GitLab. Edit `gitlab/main.bicepparam`: `dbAdminGroupId` and `dbAdminGroupName` (gitlab-db-admins).
+11. GitLab. Edit `gitlab/main.bicepparam`: `dbAdminGroupId` and `dbAdminGroupName` (gitlab-db-admins).
 
     ```bash
     export GITLAB_DB_PASSWORD='<PostgreSQL admin password>'
@@ -99,11 +114,11 @@ Run every command from the repository root. The examples use `eastus`.
 
     From an AVD session, open <http://gitlab.gitlab.internal> and sign in as `root` with that password.
 
-11. Tear down. Delete the workloads before the hub, then remove governance.
+12. Tear down. Delete the workloads before the hub, then remove governance.
 
     ```bash
     vault=$(az keyvault list -g rg-hub --query [0].name -o tsv)
-    for rg in rg-gitlab rg-aks rg-avd rg-image-builder rg-hub; do az group delete -n "$rg" --yes; done
+    for rg in rg-gitlab rg-aks rg-avd rg-jumpbox rg-image-builder rg-hub; do az group delete -n "$rg" --yes; done
     az keyvault purge -n "$vault"
     az policy assignment delete -n allowed-locations --scope /providers/Microsoft.Management/managementGroups/alz
     az policy assignment delete -n security-benchmark --scope /providers/Microsoft.Management/managementGroups/alz
