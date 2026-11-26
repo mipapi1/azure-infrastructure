@@ -75,7 +75,7 @@ Run every command from the repository root. The examples use `eastus`.
    sudo stig-scan
    ```
 
-8. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins). FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
+8. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins). Hosts use the Marketplace Windows 11 multi-session image unless you set `imageId` to the image builder's `win11-avd` image. FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
 
    ```bash
    export AVD_ADMIN_PASSWORD='<session host local admin password>'

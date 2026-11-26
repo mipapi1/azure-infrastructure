@@ -1,5 +1,5 @@
 // Azure Virtual Desktop: spoke network, pooled host pool, desktop, workspace, FSLogix profile
-// storage and Entra-joined session hosts built from the image-builder gallery image.
+// storage and Entra-joined session hosts from the Marketplace or the image-builder gallery image.
 // Deploy into resource group rg-avd.
 
 param userGroupId string
@@ -16,6 +16,8 @@ param profileStorageType string = 'AzureFiles'
 @minValue(100)
 param profileShareQuotaGiB int = 100
 param profileSizeInMBs int = 30000
+@description('Session host image: a gallery image definition or version ID, e.g. the image-builder win11-avd image. Empty: the Marketplace Windows 11 multi-session + Microsoft 365 image (FSLogix is preinstalled on both).')
+param imageId string = ''
 param tokenStart string = utcNow()
 param location string = resourceGroup().location
 
@@ -223,10 +225,6 @@ resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
   }
 }
 
-resource image 'Microsoft.Compute/galleries/images@2024-03-03' existing = {
-  name: 'gal_images/win11-avd'
-  scope: resourceGroup('rg-image-builder')
-}
 
 resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
   for i in range(0, hostCount): {
@@ -263,7 +261,9 @@ resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
         adminPassword: adminPassword
       }
       storageProfile: {
-        imageReference: { id: image.id }
+        imageReference: empty(imageId)
+          ? { publisher: 'MicrosoftWindowsDesktop', offer: 'office-365', sku: 'win11-25h2-avd-m365', version: 'latest' }
+          : { id: imageId }
         osDisk: {
           createOption: 'FromImage'
           deleteOption: 'Delete'
