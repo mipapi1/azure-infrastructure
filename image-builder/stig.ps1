@@ -2,8 +2,9 @@
 # `windowsStig = true` in main.bicepparam.
 #
 # How it works:
-#   1. This step downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
-#      prepares the GPOs in C:\ProgramData\STIG, and applies settings the GPO package doesn't
+#   1. bootstrap.ps1 has already downloaded the DISA GPO package, LGPO and SCC from the image builder
+#      storage account and checked their SHA256. This step installs SCC, prepares the GPOs in
+#      C:\ProgramData\STIG, and applies settings the GPO package doesn't
 #      cover (TLS protocols and ciphers, .NET strong crypto, DEP, PowerShell 2.0, password expiry,
 #      auditing).
 #   2. It replaces C:\DeprovisioningScript.ps1, which Image Builder runs last. That script imports
@@ -11,9 +12,9 @@
 #      network logon to local accounts, which would cut off Image Builder's WinRM session if it were
 #      applied earlier.
 #
-# Every choice comes from image-builder/main.bicepparam: which GPOs, the GPO package and its
-# SHA256, the supplemental settings, and the DISA SCAP Compliance Checker (SCC) installer.
-# New GPO package: DISA releases one each quarter. Update windowsStigPackage (Get-FileHash <zip>).
+# Every choice comes from image-builder/main.bicepparam: which GPOs, the GPO package, LGPO, the
+# supplemental settings, and the DISA SCAP Compliance Checker (SCC). New GPO package: DISA releases
+# one each quarter; update windowsStigPackage and run publish.sh.
 #
 # Not applied, with the reason (report these as findings):
 #   NewAdministratorName      Azure names the admin account at deploy time; rename per VM if required.
@@ -32,36 +33,22 @@
 param(
     # GPO folders in the package, matched as "DoD <name> ...", e.g. 'Windows 11', 'Microsoft Edge'.
     [Parameter(Mandatory)][string[]]$GpoNames,
-    [Parameter(Mandatory)][string]$PackageUrl,
-    [Parameter(Mandatory)][string]$PackageSha256,
+    # Local zip files written and checked by bootstrap.ps1.
+    [Parameter(Mandatory)][string]$PackagePath,
+    [Parameter(Mandatory)][string]$LgpoPath,
     [bool]$Supplemental = $true,
     # DISA SCC bundle (zip with SCC_*_Windows_Setup.exe). Empty: not installed.
-    [string]$SccUrl = '',
-    [string]$SccSha256 = ''
+    [string]$SccPath = ''
 )
 $ErrorActionPreference = 'Stop'
 trap { Write-Output "STIG: $_"; exit 1 }
-
-# LGPO from the Microsoft Security Compliance Toolkit: https://www.microsoft.com/download/details.aspx?id=55319
-$lgpoUrl = 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
-$lgpoSha256 = 'CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55'
 
 $root = "$Env:ProgramData\STIG"
 $gpoDir = "$root\GPOs"
 New-Item -ItemType Directory -Path $gpoDir -Force | Out-Null
 
-function Get-Verified([string]$Url, [string]$Sha256, [string]$Destination) {
-    Write-Output "STIG: Downloading $Url"
-    $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $Url -OutFile "$Destination.zip" -UseBasicParsing
-    $hash = (Get-FileHash -LiteralPath "$Destination.zip" -Algorithm SHA256).Hash
-    if ($hash -ne $Sha256) { throw "SHA256 mismatch for ${Url}: got $hash" }
-    Expand-Archive -LiteralPath "$Destination.zip" -DestinationPath $Destination -Force
-    Remove-Item -LiteralPath "$Destination.zip"
-}
-
-Get-Verified $PackageUrl $PackageSha256 "$Env:TEMP\stig"
-Get-Verified $lgpoUrl $lgpoSha256 "$Env:TEMP\lgpo"
+Expand-Archive -LiteralPath $PackagePath -DestinationPath "$Env:TEMP\stig" -Force
+Expand-Archive -LiteralPath $LgpoPath -DestinationPath "$Env:TEMP\lgpo" -Force
 Copy-Item -LiteralPath (Get-ChildItem "$Env:TEMP\lgpo" -Recurse -Filter LGPO.exe | Select-Object -First 1).FullName -Destination "$root\LGPO.exe"
 
 Write-Output 'STIG: Copying ADMX/ADML templates'
@@ -140,10 +127,10 @@ if ($Supplemental) {
 }
 
 # DISA SCAP Compliance Checker, to scan VMs built from this image.
-if ($SccUrl) {
-    Get-Verified $SccUrl $SccSha256 "$Env:TEMP\scc"
+if ($SccPath) {
+    Expand-Archive -LiteralPath $SccPath -DestinationPath "$Env:TEMP\scc" -Force
     $setup = Get-ChildItem "$Env:TEMP\scc" -Recurse -Filter 'SCC_*_Windows_Setup.exe' | Select-Object -First 1
-    if (-not $setup) { throw "No SCC_*_Windows_Setup.exe in $SccUrl" }
+    if (-not $setup) { throw "No SCC_*_Windows_Setup.exe in $SccPath" }
     Write-Output "STIG: Installing $($setup.Name)"
     $process = Start-Process -FilePath $setup.FullName -Wait -PassThru -ArgumentList '/VERYSILENT', '/SP-', '/SUPPRESSMSGBOXES', '/NORESTART'
     if ($process.ExitCode -ne 0) { throw "SCC setup failed with exit code $($process.ExitCode)" }
@@ -178,5 +165,5 @@ while ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\
 Write-Output '>>> Sysprep complete ...'
 '@
 
-Remove-Item "$Env:TEMP\stig", "$Env:TEMP\lgpo" -Recurse -Force
+Remove-Item "$Env:TEMP\stig", "$Env:TEMP\lgpo", "C:\BuildArtifacts" -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "STIG: Ready. $($GpoNames.Count) GPO set(s) apply before sysprep."

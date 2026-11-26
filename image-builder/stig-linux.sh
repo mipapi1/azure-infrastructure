@@ -3,11 +3,12 @@
 # Applies the SCAP Security Guide (ComplianceAsCode) STIG profile fixes, minus the rules in
 # `excludes`, and installs `stig-scan` to check a VM built from the image.
 #
-# Settings come from image-builder/main.bicepparam through environment variables:
-#   SSG_VERSION, SSG_SHA256   SCAP Security Guide release (linuxSsg; sha256sum <zip> for a new one)
-#   STIG_PROFILE              SSG profile id (linuxStigProfile), e.g. stig or cis_level1_server
-#   STIG_EXCLUDES             space-separated rule ids not applied (linuxStigExcludes)
-#   SCC_URL, SCC_SHA256       optional DISA SCC bundle with a .deb (linuxScc); empty: not installed
+# bootstrap.sh has already downloaded the installers from the image builder storage account and
+# checked their SHA256. Settings come from image-builder/main.bicepparam as environment variables:
+#   SSG_ZIP          SCAP Security Guide release zip (linuxSsg)
+#   STIG_PROFILE     SSG profile id (linuxStigProfile), e.g. stig or cis_level1_server
+#   STIG_EXCLUDES    space-separated rule ids not applied (linuxStigExcludes)
+#   SCC_ZIP          optional DISA SCC bundle with a .deb (linuxScc); empty: not installed
 #
 # Not applied, with the reason (report these as findings):
 #   sudo_remove_nopasswd,  The Azure admin account is key-only and has no password, so it needs
@@ -25,8 +26,7 @@
 # First scan of an image built with this script: 212 pass, 9 fail (the items above), 5 notchecked.
 set -euo pipefail
 
-ssg_version=${SSG_VERSION:?}
-ssg_sha256=${SSG_SHA256:?}
+ssg_zip=${SSG_ZIP:?}
 profile=${STIG_PROFILE:-stig}
 read -r -a excludes <<< "${STIG_EXCLUDES:-}"
 
@@ -39,10 +39,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q unzip ufw openscap-scanner
 
-curl -fsSL -o /tmp/ssg.zip "https://github.com/ComplianceAsCode/content/releases/download/v${ssg_version}/scap-security-guide-${ssg_version}.zip"
-echo "${ssg_sha256}  /tmp/ssg.zip" | sha256sum -c -
-unzip -q -o -j /tmp/ssg.zip "*/ssg-ubuntu2404-ds.xml" "*/bash/ubuntu2404-script-${profile}.sh" -d "$dir"
-rm -f /tmp/ssg.zip
+unzip -q -o -j "$ssg_zip" "*/ssg-ubuntu2404-ds.xml" "*/bash/ubuntu2404-script-${profile}.sh" -d "$dir"
 
 # Drop the excluded rules from the generated fix script.
 awk -v list="${excludes[*]}" '
@@ -67,14 +64,12 @@ install -d -m 0755 /run/sshd
 sshd -t
 
 # DISA SCAP Compliance Checker, if a bundle was given.
-if [[ -n "${SCC_URL:-}" ]]; then
-  curl -fsSL -o /tmp/scc.zip "$SCC_URL"
-  echo "${SCC_SHA256:?}  /tmp/scc.zip" | sha256sum -c -
-  unzip -q -o /tmp/scc.zip -d /tmp/scc
+if [[ -n "${SCC_ZIP:-}" ]]; then
+  unzip -q -o "$SCC_ZIP" -d /tmp/scc
   deb=$(find /tmp/scc -name '*.deb' | head -n 1)
-  [[ -n "$deb" ]] || { echo "STIG: no .deb in $SCC_URL"; exit 1; }
+  [[ -n "$deb" ]] || { echo "STIG: no .deb in $SCC_ZIP"; exit 1; }
   apt-get install -y -q "$deb"
-  rm -rf /tmp/scc /tmp/scc.zip
+  rm -rf /tmp/scc
 fi
 
 cat > /usr/local/sbin/stig-scan <<EOF
@@ -87,4 +82,5 @@ oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_${profile} \
 awk -F'\t' '/^Result/ { n[\$2]++ } END { for (r in n) print r, n[r] }' /var/log/stig/scan.txt | sort
 EOF
 chmod 0750 /usr/local/sbin/stig-scan
+rm -rf /var/tmp/build
 echo "STIG: done. Run 'sudo stig-scan' on a VM built from this image."

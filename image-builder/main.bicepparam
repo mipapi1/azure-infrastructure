@@ -1,5 +1,12 @@
 using 'main.bicep'
 
+// Every installer below is a { url, sha256 } pair. publish.sh downloads each one, checks the SHA256
+// and uploads it to the image builder storage account; builds read it from there. After changing
+// one, run publish.sh, delete the templates and deploy again.
+
+// Your object ID (az ad signed-in-user show --query id -o tsv), so publish.sh can upload.
+param publisherIds = ['<publisher-object-id>']
+
 // Windows 11 AVD image ------------------------------------------------------------------------
 // true: DISA STIG hardening (stig.ps1 lists what is left out and why).
 param windowsStig = false
@@ -24,6 +31,13 @@ param windowsStigPackage = {
   sha256: 'C8A093C0656CCF6D71D98A9556AA37E0F4E31574AC2AAC86F76D7D14355167BA'
 }
 
+// Microsoft LGPO, which imports the GPOs.
+// Download: https://www.microsoft.com/download/details.aspx?id=55319 (Security Compliance Toolkit)
+param windowsLgpo = {
+  url: 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
+  sha256: 'CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55'
+}
+
 // DISA SCAP Compliance Checker, installed in the image for scans. Empty url: not installed.
 // Download: https://public.cyber.mil/stigs/scap/ (Windows bundle: scc-<version>_Windows_bundle.zip)
 param windowsScc = {
@@ -44,7 +58,7 @@ param linuxStigExcludes = [
 // SCAP Security Guide release and its SHA256 (sha256sum).
 // Download: https://github.com/ComplianceAsCode/content/releases (scap-security-guide-<version>.zip)
 param linuxSsg = {
-  version: '0.1.82'
+  url: 'https://github.com/ComplianceAsCode/content/releases/download/v0.1.82/scap-security-guide-0.1.82.zip'
   sha256: '765e84bdce7f9055f9b9c2dd0ee2b713d4255f8eec94eac6d35ea4973c28919c'
 }
 

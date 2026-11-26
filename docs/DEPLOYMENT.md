@@ -45,16 +45,19 @@ Run every command from the repository root. The examples use `eastus`.
    az deployment group create -g rg-hub -f hub/main.bicep -p hub/main.bicepparam
    ```
 
-6. Image Builder. Choose the hardening in `image-builder/main.bicepparam`: `windowsStig = true` for a STIG-hardened Windows image, which GPOs, the DISA GPO package, the SCAP Compliance Checker, and the Ubuntu profile and exclusions. The Ubuntu image is always hardened. Each build takes 1 to 2 hours. Run them one after the other: each build's container needs most of the default 4-core Container Instances quota.
+6. Image Builder. Choose the hardening in `image-builder/main.bicepparam`: `windowsStig = true` for a STIG-hardened Windows image, which GPOs, the DISA GPO package, LGPO, the SCAP Compliance Checker, and the Ubuntu profile and exclusions. The Ubuntu image is always hardened. Set `publisherIds` to your object ID (`az ad signed-in-user show --query id -o tsv`).
+
+   Deploy, then publish: `publish.sh` downloads every installer in the param file, checks its SHA256 and uploads it to the storage account with the build scripts. Builds download them from there over the private endpoint and check every hash again. Each build takes 1 to 2 hours; run them one after the other, because each build's container needs most of the default 4-core Container Instances quota.
 
    ```bash
    az group create -n rg-image-builder -l eastus
    az deployment group create -g rg-image-builder -f image-builder/main.bicep -p image-builder/main.bicepparam
+   ./image-builder/publish.sh
    az image builder run -g rg-image-builder -n it-ubuntu-2404-stig
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
-   Image templates can't be updated. To change one (a script, a hardening setting, the build size), delete it with `az image builder delete -g rg-image-builder -n <template>` and deploy again. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
+   Image templates can't be updated. To change one (a hardening setting, an installer, the build size), run `publish.sh` again, delete the template with `az image builder delete -g rg-image-builder -n <template>`, and deploy again. If `publish.sh` reports that `scripts.json` changed, commit it before deploying. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
 
 7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.
 

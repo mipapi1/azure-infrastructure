@@ -8,7 +8,7 @@ An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual D
 |---|---|---|
 | [`governance`](governance) | Management group | Management group hierarchy, subscription placement, allowed locations and the Microsoft cloud security benchmark |
 | [`hub`](hub) | Resource group `rg-hub` | Hub VNet, Azure Firewall with DNS proxy, Bastion, Log Analytics with Sentinel, Key Vault on a private endpoint, gateway and endpoint subnets, budget |
-| [`image-builder`](image-builder) | Resource group `rg-image-builder` | Image Builder spoke (build and container subnets behind the firewall), Compute Gallery, a Windows 11 AVD image (STIG optional) and a STIG-hardened Ubuntu 24.04 image |
+| [`image-builder`](image-builder) | Resource group `rg-image-builder` | Image Builder spoke (build, container and endpoint subnets behind the firewall), storage account for scripts and installers on a private endpoint with `publish.sh`, Compute Gallery, a Windows 11 AVD image (STIG and DISA SCC optional) and a STIG-hardened Ubuntu 24.04 image |
 | [`jumpbox`](jumpbox) | Resource group `rg-jumpbox` | Jumpbox spoke and an Ubuntu VM from the hardened image (or Marketplace), reached through Bastion |
 | [`avd`](avd) | Resource group `rg-avd` | AVD spoke, pooled host pool, desktop, workspace, FSLogix profiles on Azure Files or blob Cloud Cache, Entra-joined session hosts |
 | [`aks`](aks) | Resource group `rg-aks` | AKS spoke, private cluster (Entra ID RBAC, CNI Overlay with Cilium, workload identity), container registry on a private endpoint |
