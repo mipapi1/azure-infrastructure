@@ -42,6 +42,7 @@ param(
 $ErrorActionPreference = 'Stop'
 trap { Write-Output "STIG: $_"; exit 1 }
 
+# LGPO from the Microsoft Security Compliance Toolkit: https://www.microsoft.com/download/details.aspx?id=55319
 $lgpoUrl = 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
 $lgpoSha256 = 'CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55'
 

@@ -18,12 +18,14 @@ param windowsStigGpos = [
 param windowsStigSupplemental = true
 
 // DISA releases a GPO package each quarter. New one: change the URL and its SHA256 (Get-FileHash).
+// Download: https://public.cyber.mil/stigs/gpo/ (files at dl.dod.cyber.mil/wp-content/uploads/stigs/zip/)
 param windowsStigPackage = {
   url: 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_October_2026.zip'
   sha256: 'C8A093C0656CCF6D71D98A9556AA37E0F4E31574AC2AAC86F76D7D14355167BA'
 }
 
 // DISA SCAP Compliance Checker, installed in the image for scans. Empty url: not installed.
+// Download: https://public.cyber.mil/stigs/scap/ (Windows bundle: scc-<version>_Windows_bundle.zip)
 param windowsScc = {
   url: 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/scc-5.15_Windows_bundle.zip'
   sha256: 'A537A0F9A39CCC2231818709F8BB5F8F9B9CBFC2EC0D44DBBFABBE35D4F558BA'
@@ -39,13 +41,15 @@ param linuxStigExcludes = [
   'sudo_require_authentication'
 ]
 
-// SCAP Security Guide release (github.com/ComplianceAsCode/content/releases) and its SHA256.
+// SCAP Security Guide release and its SHA256 (sha256sum).
+// Download: https://github.com/ComplianceAsCode/content/releases (scap-security-guide-<version>.zip)
 param linuxSsg = {
   version: '0.1.82'
   sha256: '765e84bdce7f9055f9b9c2dd0ee2b713d4255f8eec94eac6d35ea4973c28919c'
 }
 
 // DISA SCC for Linux (zip containing a .deb). The download needs a DoD login, so host it yourself.
+// Download: https://public.cyber.mil/stigs/scap/ (Ubuntu bundle)
 // OpenSCAP (`sudo stig-scan`) is always installed.
 param linuxScc = {
   url: ''
