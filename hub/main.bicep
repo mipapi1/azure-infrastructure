@@ -1,4 +1,5 @@
-// Hub network: firewall (all spoke egress and DNS), Bastion, Log Analytics and a budget.
+// Hub network: firewall (all spoke egress and DNS), Bastion, Log Analytics with Sentinel,
+// Key Vault on a private endpoint and a budget.
 // Deploy into resource group rg-hub. Spokes find these resources by name.
 
 param alertEmail string
@@ -15,6 +16,12 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
   }
 }
 
+resource sentinel 'Microsoft.SecurityInsights/onboardingStates@2024-03-01' = {
+  name: 'default'
+  scope: workspace
+  properties: {}
+}
+
 resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
   name: 'vnet-hub'
   location: location
@@ -23,6 +30,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
     subnets: [
       { name: 'AzureFirewallSubnet', properties: { addressPrefix: '10.0.0.0/26' } }
       { name: 'AzureBastionSubnet', properties: { addressPrefix: '10.0.1.0/26' } }
+      { name: 'GatewaySubnet', properties: { addressPrefix: '10.0.2.0/27' } } // reserved for a VPN or ExpressRoute gateway
+      { name: 'snet-pe', properties: { addressPrefix: '10.0.3.0/27' } }
     ]
   }
 }
@@ -93,6 +102,65 @@ resource bastion 'Microsoft.Network/bastionHosts@2025-07-01' = {
           publicIPAddress: { id: bastionIp.id }
         }
       }
+    ]
+  }
+}
+
+// Platform secrets. RBAC only, no public access. Purge protection is off so a torn-down sandbox
+// can be purged and redeployed; turn it on for production and for customer-managed keys.
+resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
+  name: 'kv-hub-${uniqueString(resourceGroup().id)}'
+  location: location
+  properties: {
+    tenantId: tenant().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    softDeleteRetentionInDays: 7
+    publicNetworkAccess: 'Disabled'
+    networkAcls: { defaultAction: 'Deny', bypass: 'AzureServices' }
+  }
+}
+
+resource vaultLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'law-hub'
+  scope: vault
+  properties: {
+    workspaceId: workspace.id
+    logs: [{ categoryGroup: 'audit', enabled: true }]
+  }
+}
+
+module vaultZone '../modules/dns-zone.bicep' = {
+  name: 'dns-vault'
+  params: {
+    name: 'privatelink.vaultcore.azure.net'
+  }
+  dependsOn: [vnet]
+}
+
+resource vaultEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
+  name: 'pe-vault'
+  location: location
+  properties: {
+    subnet: { id: '${vnet.id}/subnets/snet-pe' }
+    privateLinkServiceConnections: [
+      {
+        name: 'vault'
+        properties: {
+          privateLinkServiceId: vault.id
+          groupIds: ['vault']
+        }
+      }
+    ]
+  }
+}
+
+resource vaultDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-07-01' = {
+  parent: vaultEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      { name: 'vault', properties: { privateDnsZoneId: vaultZone.outputs.id } }
     ]
   }
 }
