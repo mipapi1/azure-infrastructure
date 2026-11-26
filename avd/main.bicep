@@ -7,17 +7,146 @@ param adminGroupId string
 @secure()
 param adminPassword string
 param adminUsername string = 'avdadmin'
-param hostCount int = 1
-param vmSize string = 'Standard_D4ds_v5'
-@description('Where FSLogix keeps profiles: an Azure Files share or Cloud Cache on blob storage.')
-@allowed(['AzureFiles', 'BlobCloudCache'])
-param profileStorageType string = 'AzureFiles'
-@description('Azure Files share size. Premium shares start at 100 GiB.')
-@minValue(100)
-param profileShareQuotaGiB int = 100
-param profileSizeInMBs int = 30000
+
+@description('''Object ID of the Azure Virtual Desktop service principal, for start VM on connect and the scaling plan:
+az ad sp show --id 9cdead84-a844-4324-93f2-b2e6bb768d07 --query id -o tsv. Empty: neither gets its role.''')
+param avdServicePrincipalId string = ''
+
 @description('Session host image: a gallery image definition or version ID, e.g. the image-builder win11-avd image. Empty: the Marketplace Windows 11 multi-session + Microsoft 365 image (FSLogix is preinstalled on both).')
 param imageId string = ''
+
+@description('Host pool settings.')
+param hostPool {
+  @description('Maximum concurrent user sessions per host.')
+  maxSessionLimit: int
+  @description('BreadthFirst spreads users across hosts; DepthFirst fills one host before the next.')
+  loadBalancerType: ('BreadthFirst' | 'DepthFirst')
+  @description('Start deallocated hosts when a user connects (needs avdServicePrincipalId).')
+  startVMOnConnect: bool
+  @description('RDP properties, one per entry: https://learn.microsoft.com/azure/virtual-desktop/rdp-properties')
+  rdpProperties: string[]
+  publicNetworkAccess: ('Enabled' | 'Disabled' | 'EnabledForClientsOnly' | 'EnabledForSessionHostsOnly')
+} = {
+  maxSessionLimit: 10
+  loadBalancerType: 'BreadthFirst'
+  startVMOnConnect: true
+  rdpProperties: ['targetisaadjoined:i:1', 'enablerdsaadauth:i:1']
+  publicNetworkAccess: 'Enabled'
+}
+
+@description('Workspace settings.')
+param workspace {
+  @description('Name shown in the Windows App.')
+  friendlyName: string
+  publicNetworkAccess: ('Enabled' | 'Disabled')
+} = {
+  friendlyName: 'Azure Virtual Desktop'
+  publicNetworkAccess: 'Enabled'
+}
+
+@description('Session host settings.')
+param sessionHosts {
+  count: int
+  @description('Hosts are vm-<prefix>-<n>, computer name <prefix>-<n> (15 characters max).')
+  @maxLength(12)
+  namePrefix: string
+  vmSize: string
+  osDiskSizeGB: int
+  osDiskType: ('Premium_LRS' | 'StandardSSD_LRS' | 'Premium_ZRS' | 'StandardSSD_ZRS')
+  acceleratedNetworking: bool
+  @description('Enroll hosts in Intune during the Entra join.')
+  intuneEnrollment: bool
+  @description('Trusted Launch boot integrity monitoring (guest attestation extension, reported in Defender for Cloud).')
+  guestAttestation: bool
+} = {
+  count: 1
+  namePrefix: 'avd'
+  vmSize: 'Standard_D4ds_v5'
+  osDiskSizeGB: 256
+  osDiskType: 'Premium_LRS'
+  acceleratedNetworking: true
+  intuneEnrollment: false
+  guestAttestation: true
+}
+
+@description('''FSLogix profile containers. storageType AzureFiles: Premium SMB share (the usual choice).
+BlobCloudCache: page blobs with a local cache on each host (cheaper, rides out short outages).''')
+param fslogix {
+  enabled: bool
+  storageType: ('AzureFiles' | 'BlobCloudCache')
+  @description('Maximum profile disk size in MB.')
+  sizeInMBs: int
+  @description('Azure Files share size in GiB (Premium starts at 100).')
+  shareQuotaGiB: int
+} = {
+  enabled: true
+  storageType: 'AzureFiles'
+  sizeInMBs: 30000
+  shareQuotaGiB: 100
+}
+
+@description('Time of day, 24-hour clock, in the scaling plan time zone.')
+type time = { hour: int, minute: int }
+
+@description('One scaling schedule: the days and what each of the four phases does.')
+type schedule = {
+  name: string
+  daysOfWeek: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday')[]
+  rampUpStartTime: time
+  rampUpLoadBalancingAlgorithm: ('BreadthFirst' | 'DepthFirst')
+  rampUpMinimumHostsPct: int
+  rampUpCapacityThresholdPct: int
+  peakStartTime: time
+  peakLoadBalancingAlgorithm: ('BreadthFirst' | 'DepthFirst')
+  rampDownStartTime: time
+  rampDownLoadBalancingAlgorithm: ('BreadthFirst' | 'DepthFirst')
+  rampDownMinimumHostsPct: int
+  rampDownCapacityThresholdPct: int
+  rampDownForceLogoffUsers: bool
+  rampDownWaitTimeMinutes: int
+  rampDownNotificationMessage: string
+  rampDownStopHostsWhen: ('ZeroSessions' | 'ZeroActiveSessions')
+  offPeakStartTime: time
+  offPeakLoadBalancingAlgorithm: ('BreadthFirst' | 'DepthFirst')
+}
+
+@description('Scaling plan for the host pool (needs avdServicePrincipalId). Hosts tagged with exclusionTag are left alone.')
+param scalingPlan {
+  enabled: bool
+  timeZone: string
+  exclusionTag: string
+  schedules: schedule[]
+} = {
+  enabled: false
+  timeZone: 'Eastern Standard Time'
+  exclusionTag: ''
+  schedules: [
+    {
+      name: 'weekdays'
+      daysOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+      rampUpStartTime: { hour: 8, minute: 0 }
+      rampUpLoadBalancingAlgorithm: 'BreadthFirst'
+      rampUpMinimumHostsPct: 20
+      rampUpCapacityThresholdPct: 60
+      peakStartTime: { hour: 9, minute: 0 }
+      peakLoadBalancingAlgorithm: 'DepthFirst'
+      rampDownStartTime: { hour: 18, minute: 0 }
+      rampDownLoadBalancingAlgorithm: 'DepthFirst'
+      rampDownMinimumHostsPct: 0
+      rampDownCapacityThresholdPct: 90
+      rampDownForceLogoffUsers: false
+      rampDownWaitTimeMinutes: 30
+      rampDownNotificationMessage: 'You will be signed out in 30 minutes. Save your work.'
+      rampDownStopHostsWhen: 'ZeroActiveSessions'
+      offPeakStartTime: { hour: 20, minute: 0 }
+      offPeakLoadBalancingAlgorithm: 'DepthFirst'
+    }
+  ]
+}
+
+@description('Send host pool, application group and workspace logs to law-hub.')
+param diagnostics bool = true
+
 param tokenStart string = utcNow()
 param location string = resourceGroup().location
 
@@ -86,15 +215,17 @@ module spoke '../modules/spoke.bicep' = {
   }
 }
 
-resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2024-04-03' = {
+resource pool 'Microsoft.DesktopVirtualization/hostPools@2024-04-03' = {
   name: 'vdpool-avd'
   location: location
   properties: {
     hostPoolType: 'Pooled'
-    loadBalancerType: 'BreadthFirst'
-    maxSessionLimit: 10
+    loadBalancerType: hostPool.loadBalancerType
+    maxSessionLimit: hostPool.maxSessionLimit
+    startVMOnConnect: hostPool.startVMOnConnect
+    publicNetworkAccess: hostPool.publicNetworkAccess
     preferredAppGroupType: 'Desktop'
-    customRdpProperty: 'targetisaadjoined:i:1;enablerdsaadauth:i:1'
+    customRdpProperty: join(hostPool.rdpProperties, ';')
     registrationInfo: {
       expirationTime: dateTimeAdd(tokenStart, 'PT4H')
       registrationTokenOperation: 'Update'
@@ -107,16 +238,65 @@ resource desktop 'Microsoft.DesktopVirtualization/applicationGroups@2024-04-03' 
   location: location
   properties: {
     applicationGroupType: 'Desktop'
-    hostPoolArmPath: hostPool.id
+    hostPoolArmPath: pool.id
   }
 }
 
-resource workspace 'Microsoft.DesktopVirtualization/workspaces@2024-04-03' = {
+resource desktopWorkspace 'Microsoft.DesktopVirtualization/workspaces@2024-04-03' = {
   name: 'vdws-avd'
   location: location
   properties: {
+    friendlyName: workspace.friendlyName
+    publicNetworkAccess: workspace.publicNetworkAccess
     applicationGroupReferences: [desktop.id]
   }
+}
+
+var logs = resourceId('rg-hub', 'Microsoft.OperationalInsights/workspaces', 'law-hub')
+
+resource poolLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
+  name: 'diag-vdpool-avd'
+  scope: pool
+  properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
+}
+
+resource desktopLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
+  name: 'diag-vdag-avd'
+  scope: desktop
+  properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
+}
+
+resource workspaceLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
+  name: 'diag-vdws-avd'
+  scope: desktopWorkspace
+  properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
+}
+
+// Start VM on connect and the scaling plan act through the Azure Virtual Desktop service principal.
+var powerOnOff = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '40c5ff49-9181-41f8-ae61-143b0e78555e')
+var powerOn = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '489581de-a3bd-480d-9518-53dea7416b33')
+var avdRole = scalingPlan.enabled ? powerOnOff : powerOn
+
+resource avdPower 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(avdServicePrincipalId) && (scalingPlan.enabled || hostPool.startVMOnConnect)) {
+  name: guid(resourceGroup().id, avdServicePrincipalId, avdRole)
+  properties: {
+    principalId: avdServicePrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: avdRole
+  }
+}
+
+resource scaling 'Microsoft.DesktopVirtualization/scalingPlans@2024-04-03' = if (scalingPlan.enabled) {
+  name: 'vdscaling-avd'
+  location: location
+  properties: {
+    hostPoolType: 'Pooled'
+    timeZone: scalingPlan.timeZone
+    exclusionTag: scalingPlan.exclusionTag
+    schedules: scalingPlan.schedules
+    hostPoolReferences: [{ hostPoolArmPath: pool.id, scalingPlanEnabled: true }]
+  }
+  dependsOn: [avdPower]
 }
 
 resource desktopAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -153,10 +333,10 @@ resource adminLogin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 //   AzureFiles      Premium SMB share. Lower latency for VHDX; the usual choice.
 //   BlobCloudCache  Standard page blobs with a local cache on each host. Cheaper, and keeps
 //                   working through short storage outages.
-var useFiles = profileStorageType == 'AzureFiles'
+var useFiles = fslogix.storageType == 'AzureFiles'
 var storageService = useFiles ? 'file' : 'blob'
 
-resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
+resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = if (fslogix.enabled) {
   name: 'stavd${take(uniqueString(subscription().id), 6)}'
   location: location
   kind: useFiles ? 'FileStorage' : 'StorageV2'
@@ -170,7 +350,7 @@ resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   }
 }
 
-resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01' = if (useFiles) {
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01' = if (fslogix.enabled && useFiles) {
   parent: profileStorage
   name: 'default'
   properties: {
@@ -181,16 +361,16 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01'
   }
 }
 
-resource profileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-01-01' = if (useFiles) {
+resource profileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-01-01' = if (fslogix.enabled && useFiles) {
   parent: fileService
   name: 'profiles'
   properties: {
-    shareQuota: profileShareQuotaGiB
+    shareQuota: fslogix.shareQuotaGiB
     enabledProtocols: 'SMB'
   }
 }
 
-module storageZone '../modules/dns-zone.bicep' = {
+module storageZone '../modules/dns-zone.bicep' = if (fslogix.enabled) {
   name: 'dns-${storageService}'
   scope: resourceGroup('rg-hub')
   params: {
@@ -198,7 +378,7 @@ module storageZone '../modules/dns-zone.bicep' = {
   }
 }
 
-resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
+resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = if (fslogix.enabled) {
   name: 'pe-avd-${storageService}'
   location: location
   properties: {
@@ -215,22 +395,23 @@ resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
   }
 }
 
-resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-07-01' = {
+resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-07-01' = if (fslogix.enabled) {
   parent: profileEndpoint
   name: 'default'
   properties: {
     privateDnsZoneConfigs: [
-      { name: storageService, properties: { privateDnsZoneId: storageZone.outputs.id } }
+      { name: storageService, properties: { privateDnsZoneId: storageZone!.outputs.id } }
     ]
   }
 }
 
 
 resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
-  for i in range(0, hostCount): {
-    name: 'nic-avd-${i}'
+  for i in range(0, sessionHosts.count): {
+    name: 'nic-${sessionHosts.namePrefix}-${i}'
     location: location
     properties: {
+      enableAcceleratedNetworking: sessionHosts.acceleratedNetworking
       ipConfigurations: [
         {
           name: 'ipconfig'
@@ -244,19 +425,19 @@ resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
 ]
 
 resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
-  for i in range(0, hostCount): {
-    name: 'vm-avd-${i}'
+  for i in range(0, sessionHosts.count): {
+    name: 'vm-${sessionHosts.namePrefix}-${i}'
     location: location
     identity: { type: 'SystemAssigned' }
     properties: {
-      hardwareProfile: { vmSize: vmSize }
+      hardwareProfile: { vmSize: sessionHosts.vmSize }
       licenseType: 'Windows_Client'
       securityProfile: {
         securityType: 'TrustedLaunch'
         uefiSettings: { secureBootEnabled: true, vTpmEnabled: true }
       }
       osProfile: {
-        computerName: 'avd-${i}'
+        computerName: '${sessionHosts.namePrefix}-${i}'
         adminUsername: adminUsername
         adminPassword: adminPassword
       }
@@ -267,19 +448,43 @@ resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
         osDisk: {
           createOption: 'FromImage'
           deleteOption: 'Delete'
-          diskSizeGB: 256 // room for the FSLogix local cache
-          managedDisk: { storageAccountType: 'Premium_LRS' }
+          diskSizeGB: sessionHosts.osDiskSizeGB // room for the FSLogix local cache
+          managedDisk: { storageAccountType: sessionHosts.osDiskType }
         }
       }
       networkProfile: {
         networkInterfaces: [{ id: nics[i].id, properties: { deleteOption: 'Delete' } }]
+      }
+      diagnosticsProfile: { bootDiagnostics: { enabled: true } }
+    }
+  }
+]
+
+resource attestation 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
+  for i in range(0, sessionHosts.count): if (sessionHosts.guestAttestation) {
+    parent: hosts[i]
+    name: 'GuestAttestation'
+    location: location
+    properties: {
+      publisher: 'Microsoft.Azure.Security.WindowsAttestation'
+      type: 'GuestAttestation'
+      typeHandlerVersion: '1.0'
+      autoUpgradeMinorVersion: true
+      enableAutomaticUpgrade: true
+      settings: {
+        AttestationConfig: {
+          MaaSettings: { maaEndpoint: '', maaTenantName: 'GuestAttestation' }
+          AscSettings: { ascReportingEndpoint: '', ascReportingFrequency: '' }
+          useCustomToken: 'false'
+          disableAlerts: 'false'
+        }
       }
     }
   }
 ]
 
 resource entraJoin 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
-  for i in range(0, hostCount): {
+  for i in range(0, sessionHosts.count): {
     parent: hosts[i]
     name: 'AADLoginForWindows'
     location: location
@@ -288,13 +493,15 @@ resource entraJoin 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
       type: 'AADLoginForWindows'
       typeHandlerVersion: '2.0'
       autoUpgradeMinorVersion: true
+      settings: sessionHosts.intuneEnrollment ? { mdmId: '0000000a-0000-0000-c000-000000000000' } : null
     }
+    dependsOn: [attestation[i]]
   }
 ]
 
 // Installs the AVD agent and registers the host with the host pool.
 resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' = [
-  for i in range(0, hostCount): {
+  for i in range(0, sessionHosts.count): {
     parent: hosts[i]
     name: 'AddSessionHost'
     location: location
@@ -307,7 +514,7 @@ resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' 
         modulesUrl: 'https://wvdportalstorageblob.blob.${environment().suffixes.storage}/galleryartifacts/Configuration_1.0.03211.1002.zip'
         configurationFunction: 'Configuration.ps1\\AddSessionHost'
         properties: {
-          hostPoolName: hostPool.name
+          hostPoolName: pool.name
           registrationInfoTokenCredential: {
             UserName: 'PLACEHOLDER_DO_NOT_USE'
             Password: 'PrivateSettingsRef:RegistrationInfoToken'
@@ -318,7 +525,7 @@ resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' 
       }
       protectedSettings: {
         Items: {
-          RegistrationInfoToken: hostPool.listRegistrationTokens().value[0].token
+          RegistrationInfoToken: pool.listRegistrationTokens().value[0].token
         }
       }
     }
@@ -326,8 +533,8 @@ resource registration 'Microsoft.Compute/virtualMachines/extensions@2025-04-01' 
   }
 ]
 
-resource fslogix 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
-  for i in range(0, hostCount): {
+resource configureFslogix 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
+  for i in range(0, sessionHosts.count): if (fslogix.enabled) {
     parent: hosts[i]
     name: 'configure-fslogix'
     location: location
@@ -337,13 +544,13 @@ resource fslogix 'Microsoft.Compute/virtualMachines/runCommands@2025-04-01' = [
       timeoutInSeconds: 900
       source: { script: loadTextContent('fslogix.ps1') }
       parameters: [
-        { name: 'StorageType', value: profileStorageType }
-        { name: 'AccountName', value: profileStorage.name }
+        { name: 'StorageType', value: fslogix.storageType }
+        { name: 'AccountName', value: profileStorage!.name }
         { name: 'EndpointSuffix', value: environment().suffixes.storage }
-        { name: 'SizeInMBs', value: string(profileSizeInMBs) }
+        { name: 'SizeInMBs', value: string(fslogix.sizeInMBs) }
       ]
       protectedParameters: [
-        { name: 'AccountKey', value: profileStorage.listKeys().keys[0].value }
+        { name: 'AccountKey', value: profileStorage!.listKeys().keys[0].value }
       ]
     }
     dependsOn: [registration[i], profileDns, profileShare]
