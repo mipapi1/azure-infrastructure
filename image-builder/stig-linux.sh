@@ -13,6 +13,12 @@
 #   GRUB password          Needs a per-VM secret and would stop unattended boots; the serial
 #                          console already requires Azure RBAC.
 #   Manual checks          `stig-scan` reports them as notchecked; review them by hand.
+# Left failing in `stig-scan`, with the reason:
+#   Log file permissions   Logs written at first boot (cloud-init, waagent) are 0644. Fix on each VM:
+#                          sudo find /var/log -type f -perm /137 -exec chmod 640 {} +
+#   SSSD, certificate map  Smart card sign-in through SSSD isn't used: sign-in is by SSH key.
+#   Audit log offload      Needs a log forwarder (e.g. Azure Monitor Agent with a data collection rule).
+# First scan of an image built with this script: 212 pass, 9 fail (the items above), 5 notchecked.
 set -euo pipefail
 
 ssg_version=0.1.82
