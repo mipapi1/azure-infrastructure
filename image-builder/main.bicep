@@ -99,6 +99,10 @@ module spoke '../modules/spoke.bicep' = {
       { name: 'snet-pe', addressPrefix: endpointPrefix }
     ]
     rulePriority: 500
+    // Image Builder's container mounts a file share from its staging storage account over SMB, and
+    // the mount stalls when routed through Azure Firewall (the container stays in "Creating").
+    // Storage traffic goes out directly; everything else still goes through the firewall.
+    routes: [{ name: 'storage-direct', addressPrefix: 'Storage', nextHopType: 'Internet' }]
     ruleCollections: [
       {
         name: 'image-builder-network'
@@ -113,15 +117,6 @@ module spoke '../modules/spoke.bicep' = {
             sourceIpGroups: [buildIpGroup]
             destinationFqdns: ['azkms.${environment().suffixes.storage}', 'kms.${environment().suffixes.storage}']
             destinationPorts: ['1688']
-          }
-          {
-            // Isolated builds: Image Builder's container mounts a file share from its staging storage account.
-            ruleType: 'NetworkRule'
-            name: 'container-file-share'
-            ipProtocols: ['TCP']
-            sourceIpGroups: [containerIpGroup]
-            destinationAddresses: ['Storage']
-            destinationPorts: ['445']
           }
           {
             ruleType: 'NetworkRule'

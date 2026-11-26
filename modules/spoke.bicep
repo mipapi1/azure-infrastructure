@@ -8,6 +8,8 @@ param addressPrefix string
 param subnets array
 param ruleCollections array
 param rulePriority int
+@description('Extra routes, e.g. [{ name, addressPrefix, nextHopType }] for a service tag that must skip the firewall.')
+param routes array = []
 param location string = resourceGroup().location
 
 resource hubVnet 'Microsoft.Network/virtualNetworks@2025-07-01' existing = {
@@ -27,16 +29,19 @@ resource routeTable 'Microsoft.Network/routeTables@2025-07-01' = {
   location: location
   properties: {
     disableBgpRoutePropagation: true
-    routes: [
-      {
-        name: 'default-via-firewall'
-        properties: {
-          addressPrefix: '0.0.0.0/0'
-          nextHopType: 'VirtualAppliance'
-          nextHopIpAddress: firewallIp
+    routes: concat(
+      [
+        {
+          name: 'default-via-firewall'
+          properties: {
+            addressPrefix: '0.0.0.0/0'
+            nextHopType: 'VirtualAppliance'
+            nextHopIpAddress: firewallIp
+          }
         }
-      }
-    ]
+      ],
+      map(routes, r => { name: r.name, properties: { addressPrefix: r.addressPrefix, nextHopType: r.nextHopType } })
+    )
   }
 }
 

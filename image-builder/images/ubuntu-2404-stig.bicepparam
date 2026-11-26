@@ -31,8 +31,7 @@ param publisherIds = ['<publisher-object-id>']
 // az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv
 param buildVmSize = 'Standard_D2as_v4'
 // isolated: Image Builder's container runs in snet-container (Dept of State setup).
-// proxy: it runs in Image Builder's network and reaches the build VM through a proxy VM in snet-build;
-// use it if the container stalls in "Creating" (seen in this subscription's East US testing).
+// proxy: it runs in Image Builder's network and reaches the build VM through a proxy VM in snet-build.
 param buildMode = 'isolated'
 param proxyVmSize = 'Standard_D2as_v4' // proxy mode only
 param buildTimeoutInMinutes = 120
