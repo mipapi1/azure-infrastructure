@@ -356,7 +356,8 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-01-01'
   properties: {
     shareDeleteRetentionPolicy: { enabled: true, days: 7 }
     protocolSettings: {
-      smb: { versions: 'SMB3.1.1', channelEncryption: 'AES-256-GCM' }
+      // Key authentication (NTLMv2) needs AES-128-GCM allowed; AES-256-GCM alone returned access denied.
+      smb: { versions: 'SMB3.1.1', authenticationMethods: 'NTLMv2;Kerberos', channelEncryption: 'AES-128-GCM;AES-256-GCM' }
     }
   }
 }
