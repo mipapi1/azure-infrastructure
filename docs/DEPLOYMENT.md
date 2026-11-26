@@ -45,7 +45,7 @@ Run every command from the repository root. The examples use `eastus`.
    az deployment group create -g rg-hub -f hub/main.bicep -p hub/main.bicepparam
    ```
 
-6. Image Builder. For a STIG-hardened Windows image, set `stig = true` in `image-builder/main.bicepparam`; the Ubuntu image is always hardened. Each build takes 1 to 2 hours. Run them one after the other: each build's container needs most of the default 4-core Container Instances quota.
+6. Image Builder. Choose the hardening in `image-builder/main.bicepparam`: `windowsStig = true` for a STIG-hardened Windows image, which GPOs, the DISA GPO package, the SCAP Compliance Checker, and the Ubuntu profile and exclusions. The Ubuntu image is always hardened. Each build takes 1 to 2 hours. Run them one after the other: each build's container needs most of the default 4-core Container Instances quota.
 
    ```bash
    az group create -n rg-image-builder -l eastus
@@ -54,7 +54,7 @@ Run every command from the repository root. The examples use `eastus`.
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
-   Image templates can't be updated. To change one (a script, `stig`, the build size), delete it with `az image builder delete -g rg-image-builder -n <template>` and deploy again. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
+   Image templates can't be updated. To change one (a script, a hardening setting, the build size), delete it with `az image builder delete -g rg-image-builder -n <template>` and deploy again. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
 
 7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.
 

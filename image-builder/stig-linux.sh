@@ -3,7 +3,11 @@
 # Applies the SCAP Security Guide (ComplianceAsCode) STIG profile fixes, minus the rules in
 # `excludes`, and installs `stig-scan` to check a VM built from the image.
 #
-# New SSG release: update ssg_version and ssg_sha256 (sha256sum <zip>).
+# Settings come from image-builder/main.bicepparam through environment variables:
+#   SSG_VERSION, SSG_SHA256   SCAP Security Guide release (linuxSsg; sha256sum <zip> for a new one)
+#   STIG_PROFILE              SSG profile id (linuxStigProfile), e.g. stig or cis_level1_server
+#   STIG_EXCLUDES             space-separated rule ids not applied (linuxStigExcludes)
+#   SCC_URL, SCC_SHA256       optional DISA SCC bundle with a .deb (linuxScc); empty: not installed
 #
 # Not applied, with the reason (report these as findings):
 #   sudo_remove_nopasswd,  The Azure admin account is key-only and has no password, so it needs
@@ -21,9 +25,10 @@
 # First scan of an image built with this script: 212 pass, 9 fail (the items above), 5 notchecked.
 set -euo pipefail
 
-ssg_version=0.1.82
-ssg_sha256=765e84bdce7f9055f9b9c2dd0ee2b713d4255f8eec94eac6d35ea4973c28919c
-excludes=(sudo_remove_nopasswd sudo_require_authentication)
+ssg_version=${SSG_VERSION:?}
+ssg_sha256=${SSG_SHA256:?}
+profile=${STIG_PROFILE:-stig}
+read -r -a excludes <<< "${STIG_EXCLUDES:-}"
 
 dir=/usr/local/share/stig
 log=/var/log/stig
@@ -36,7 +41,7 @@ apt-get install -y -q unzip ufw openscap-scanner
 
 curl -fsSL -o /tmp/ssg.zip "https://github.com/ComplianceAsCode/content/releases/download/v${ssg_version}/scap-security-guide-${ssg_version}.zip"
 echo "${ssg_sha256}  /tmp/ssg.zip" | sha256sum -c -
-unzip -q -o -j /tmp/ssg.zip "*/ssg-ubuntu2404-ds.xml" "*/bash/ubuntu2404-script-stig.sh" -d "$dir"
+unzip -q -o -j /tmp/ssg.zip "*/ssg-ubuntu2404-ds.xml" "*/bash/ubuntu2404-script-${profile}.sh" -d "$dir"
 rm -f /tmp/ssg.zip
 
 # Drop the excluded rules from the generated fix script.
@@ -45,7 +50,7 @@ awk -v list="${excludes[*]}" '
   /^# BEGIN fix / { id = $0; sub(/^.*for \047/, "", id); sub(/\047.*$/, "", id); if (id in skip) dropping = 1 }
   !dropping { print }
   /^# END fix / { dropping = 0 }
-' "$dir/ubuntu2404-script-stig.sh" > "$dir/fixes.sh"
+' "$dir/ubuntu2404-script-${profile}.sh" > "$dir/fixes.sh"
 
 # One fix turns the firewall on: allow SSH first so VMs stay reachable.
 ufw allow 22/tcp > /dev/null
@@ -61,14 +66,25 @@ ufw --force enable > /dev/null
 install -d -m 0755 /run/sshd
 sshd -t
 
-cat > /usr/local/sbin/stig-scan <<'EOF'
+# DISA SCAP Compliance Checker, if a bundle was given.
+if [[ -n "${SCC_URL:-}" ]]; then
+  curl -fsSL -o /tmp/scc.zip "$SCC_URL"
+  echo "${SCC_SHA256:?}  /tmp/scc.zip" | sha256sum -c -
+  unzip -q -o /tmp/scc.zip -d /tmp/scc
+  deb=$(find /tmp/scc -name '*.deb' | head -n 1)
+  [[ -n "$deb" ]] || { echo "STIG: no .deb in $SCC_URL"; exit 1; }
+  apt-get install -y -q "$deb"
+  rm -rf /tmp/scc /tmp/scc.zip
+fi
+
+cat > /usr/local/sbin/stig-scan <<EOF
 #!/bin/sh
-# Scans this VM against the STIG profile and prints the result counts.
+# Scans this VM against the hardening profile and prints the result counts.
 # Report: /var/log/stig/report.html
-oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_stig \
+oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_${profile} \
   --results /var/log/stig/results.xml --report /var/log/stig/report.html \
   /usr/local/share/stig/ssg-ubuntu2404-ds.xml > /var/log/stig/scan.txt 2>&1
-awk -F'\t' '/^Result/ { n[$2]++ } END { for (r in n) print r, n[r] }' /var/log/stig/scan.txt | sort
+awk -F'\t' '/^Result/ { n[\$2]++ } END { for (r in n) print r, n[r] }' /var/log/stig/scan.txt | sort
 EOF
 chmod 0750 /usr/local/sbin/stig-scan
 echo "STIG: done. Run 'sudo stig-scan' on a VM built from this image."
