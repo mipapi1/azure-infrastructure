@@ -93,7 +93,7 @@ Run every command from the repository root. The examples use `eastus`.
    az aks command invoke -g rg-aks -n aks-platform --command "kubectl get nodes"
    ```
 
-10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query "[0]".name -o tsv`).
+10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query "[0].name" -o tsv`).
 
    ```bash
    az acr build -r <registry-name> -t web-app:1 apps
@@ -117,7 +117,7 @@ Run every command from the repository root. The examples use `eastus`.
     ```bash
     out() { az deployment group show -g rg-gitlab -n gitlab --query "properties.outputs.$1.value" -o tsv; }
     storage=$(out objectStorageAccount); redis=$(out redisHost)
-    postgres=$(az postgres flexible-server list -g rg-gitlab --query "[0]".name -o tsv)
+    postgres=$(az postgres flexible-server list -g rg-gitlab --query "[0].name" -o tsv)
     redis_key=$(az redisenterprise database list-keys -g rg-gitlab --cluster-name "${redis%%.*}" --query primaryKey -o tsv)
     dir=$(mktemp -d)
     sed -e "s/<postgres-server>/$postgres/" -e "s/<redis-host>/$redis/" -e "s/<gitlab-client-id>/$(out gitlabClientId)/" \
@@ -164,7 +164,7 @@ Run every command from the repository root. The examples use `eastus`.
 12. Tear down. Delete the workloads before the hub, then remove governance.
 
     ```bash
-    vault=$(az keyvault list -g rg-hub --query "[0]".name -o tsv)
+    vault=$(az keyvault list -g rg-hub --query "[0].name" -o tsv)
     for rg in rg-gitlab rg-aks rg-avd rg-jumpbox rg-image-builder rg-hub; do az group delete -n "$rg" --yes; done
     az keyvault purge -n "$vault"
     az policy assignment delete -n allowed-locations --scope /providers/Microsoft.Management/managementGroups/alz
