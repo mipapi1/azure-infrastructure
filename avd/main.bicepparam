@@ -31,7 +31,11 @@ param workspace = {
 
 param sessionHosts = {
   count: 1
-  namePrefix: 'avd' // vm-avd-0, computer name avd-0
+  startNumber: 1
+  namePrefix: 'avd' // hosts avd<hash>-001...; VMs vm-avd<hash>-001
+  // After deleting hosts, set any new text here (e.g. a date) for new names: Entra keeps the old
+  // hosts' devices, so a host with a reused name can't join.
+  forceNewHost: ''
   vmSize: 'Standard_D4ds_v5'
   osDiskSizeGB: 256 // room for the FSLogix local cache
   osDiskType: 'Premium_LRS'

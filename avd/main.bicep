@@ -46,10 +46,17 @@ param workspace {
 
 @description('Session host settings.')
 param sessionHosts {
+  @description('Number of session hosts. Lowering it does not delete hosts.')
   count: int
-  @description('Hosts are vm-<prefix>-<n>, computer name <prefix>-<n> (15 characters max).')
-  @maxLength(12)
+  @description('Number of the first host (-001).')
+  startNumber: int
+  @description('''Host names are <namePrefix><3-character hash>-<nnn>, e.g. avdk7q-001 (VM vm-avdk7q-001).
+The hash changes with the image, the VM size and forceNewHost, so a new set never reuses a name.''')
+  @maxLength(7)
   namePrefix: string
+  @description('''Any new text gives a new set of host names. Use it after deleting hosts: Entra keeps the
+deleted hosts' devices, and a new host with the same name fails to join.''')
+  forceNewHost: string
   vmSize: string
   osDiskSizeGB: int
   osDiskType: ('Premium_LRS' | 'StandardSSD_LRS' | 'Premium_ZRS' | 'StandardSSD_ZRS')
@@ -60,7 +67,9 @@ param sessionHosts {
   guestAttestation: bool
 } = {
   count: 1
+  startNumber: 1
   namePrefix: 'avd'
+  forceNewHost: ''
   vmSize: 'Standard_D4ds_v5'
   osDiskSizeGB: 256
   osDiskType: 'Premium_LRS'
@@ -407,9 +416,13 @@ resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
 }
 
 
+// Same pool, image, size and forceNewHost: same names. Changing any of them deploys a new set.
+var hostId = take(uniqueString(resourceGroup().id, imageId, sessionHosts.vmSize, sessionHosts.forceNewHost), 3)
+var hostNames = [for i in range(0, sessionHosts.count): '${sessionHosts.namePrefix}${hostId}-${padLeft(i + sessionHosts.startNumber, 3, '0')}']
+
 resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
   for i in range(0, sessionHosts.count): {
-    name: 'nic-${sessionHosts.namePrefix}-${i}'
+    name: 'nic-${hostNames[i]}'
     location: location
     properties: {
       enableAcceleratedNetworking: sessionHosts.acceleratedNetworking
@@ -427,7 +440,7 @@ resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
 
 resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
   for i in range(0, sessionHosts.count): {
-    name: 'vm-${sessionHosts.namePrefix}-${i}'
+    name: 'vm-${hostNames[i]}'
     location: location
     identity: { type: 'SystemAssigned' }
     properties: {
@@ -438,7 +451,7 @@ resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
         uefiSettings: { secureBootEnabled: true, vTpmEnabled: true }
       }
       osProfile: {
-        computerName: '${sessionHosts.namePrefix}-${i}'
+        computerName: hostNames[i]
         adminUsername: adminUsername
         adminPassword: adminPassword
       }
@@ -573,3 +586,5 @@ resource configureFslogix 'Microsoft.Compute/virtualMachines/runCommands@2025-04
     dependsOn: [registration[i], profileDns, profileShare]
   }
 ]
+
+output sessionHostNames string[] = hostNames

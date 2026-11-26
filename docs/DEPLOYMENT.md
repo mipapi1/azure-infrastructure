@@ -75,7 +75,7 @@ Run every command from the repository root. The examples use `eastus`.
    sudo stig-scan
    ```
 
-8. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins), `avdServicePrincipalId` (`az ad sp show --id 9cdead84-a844-4324-93f2-b2e6bb768d07 --query id -o tsv`), and the host pool, session host, FSLogix and scaling plan settings. Hosts use the Marketplace Windows 11 multi-session image unless you set `imageId` to the image builder's `win11-avd` image. FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
+8. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins), `avdServicePrincipalId` (`az ad sp show --id 9cdead84-a844-4324-93f2-b2e6bb768d07 --query id -o tsv`), and the host pool, session host, FSLogix and scaling plan settings. After deleting session hosts, set a new `sessionHosts.forceNewHost` before deploying again: Entra keeps the deleted hosts' devices, so a reused host name can't join. Hosts use the Marketplace Windows 11 multi-session image unless you set `imageId` to the image builder's `win11-avd` image. FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
 
    ```bash
    export AVD_ADMIN_PASSWORD='<session host local admin password>'

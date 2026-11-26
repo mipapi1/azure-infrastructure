@@ -15,6 +15,6 @@ do {
 $log = Get-ChildItem 'C:\WindowsAzure\Logs\Plugins\Microsoft.Azure.ActiveDirectory.AADLoginForWindows' -Recurse -Filter *.log -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime | Select-Object -Last 1
 if ($log -and (Get-Content -LiteralPath $log.FullName -Tail 200 | Out-String) -match 'hostname_duplicate') {
-    throw "$Env:COMPUTERNAME isn't Entra joined: an Entra device with this name already exists. Delete the stale device (Entra admin center > Devices), delete this VM and deploy again."
+    throw "$Env:COMPUTERNAME isn't Entra joined: an Entra device with this name already exists (from a deleted host). Set a new sessionHosts.forceNewHost in avd/main.bicepparam, delete this VM and deploy again."
 }
 throw "$Env:COMPUTERNAME isn't Entra joined after 5 minutes. See $($log.FullName)."
