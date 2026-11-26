@@ -15,14 +15,12 @@ global:
     enabled: false
     installEnvoy: false
 
-  # GitLab's pods use one service account, federated to the id-gitlab managed identity, which
-  # signs in to blob storage. No storage keys exist.
+  # GitLab's pods use one service account, created with the secrets (docs/DEPLOYMENT.md) and
+  # federated to the id-gitlab managed identity, which signs in to blob storage. No storage keys exist.
   serviceAccount:
     enabled: true
-    create: true
+    create: false
     name: gitlab
-    annotations:
-      azure.workload.identity/client-id: <gitlab-client-id>
 
   psql:
     host: <postgres-server>.postgres.database.azure.com

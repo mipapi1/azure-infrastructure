@@ -112,7 +112,7 @@ Run every command from the repository root. The examples use `eastus`.
     az deployment group create -g rg-gitlab -f gitlab/main.bicep -p gitlab/main.bicepparam
     ```
 
-    Install the chart. The commands fill the placeholders in `gitlab/values.yaml` from the deployment outputs and create three secrets: the PostgreSQL password, the Redis access key, and the object storage settings (account name only: GitLab signs in to blob storage with workload identity).
+    Install the chart. The commands fill the placeholders in `gitlab/values.yaml` from the deployment outputs, create GitLab's service account (linked to the `id-gitlab` identity), and create three secrets: the PostgreSQL password, the Redis access key, and the object storage settings (account name only: GitLab signs in to blob storage with workload identity).
 
     ```bash
     out() { az deployment group show -g rg-gitlab -n gitlab --query "properties.outputs.$1.value" -o tsv; }
@@ -120,9 +120,15 @@ Run every command from the repository root. The examples use `eastus`.
     postgres=$(az postgres flexible-server list -g rg-gitlab --query "[0].name" -o tsv)
     redis_key=$(az redisenterprise database list-keys -g rg-gitlab --cluster-name "${redis%%.*}" --query primaryKey -o tsv)
     dir=$(mktemp -d)
-    sed -e "s/<postgres-server>/$postgres/" -e "s/<redis-host>/$redis/" -e "s/<gitlab-client-id>/$(out gitlabClientId)/" \
-      gitlab/values.yaml > "$dir/values.yaml"
+    sed -e "s/<postgres-server>/$postgres/" -e "s/<redis-host>/$redis/" gitlab/values.yaml > "$dir/values.yaml"
     cat > "$dir/secrets.yaml" <<EOF
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: gitlab
+      namespace: gitlab
+      annotations: { azure.workload.identity/client-id: $(out gitlabClientId) }
+    ---
     apiVersion: v1
     kind: Secret
     metadata: { name: gitlab-postgres, namespace: gitlab }
