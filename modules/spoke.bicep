@@ -4,12 +4,10 @@
 
 param name string
 param addressPrefix string
-@description('[{ name, addressPrefix, delegation?, privateLinkServices? }]: delegation is a service name; privateLinkServices allows Private Link services in the subnet.')
+@description('[{ name, addressPrefix, delegation?, privateLinkServices?, serviceEndpoints? }]: delegation is a service name; privateLinkServices allows Private Link services in the subnet; serviceEndpoints lists services such as Microsoft.Storage.')
 param subnets array
 param ruleCollections array
 param rulePriority int
-@description('Extra routes, e.g. [{ name, addressPrefix, nextHopType }] for a service tag that must skip the firewall.')
-param routes array = []
 param location string = resourceGroup().location
 
 resource hubVnet 'Microsoft.Network/virtualNetworks@2025-07-01' existing = {
@@ -29,19 +27,16 @@ resource routeTable 'Microsoft.Network/routeTables@2025-07-01' = {
   location: location
   properties: {
     disableBgpRoutePropagation: true
-    routes: concat(
-      [
-        {
-          name: 'default-via-firewall'
-          properties: {
-            addressPrefix: '0.0.0.0/0'
-            nextHopType: 'VirtualAppliance'
-            nextHopIpAddress: firewallIp
-          }
+    routes: [
+      {
+        name: 'default-via-firewall'
+        properties: {
+          addressPrefix: '0.0.0.0/0'
+          nextHopType: 'VirtualAppliance'
+          nextHopIpAddress: firewallIp
         }
-      ],
-      map(routes, r => { name: r.name, properties: { addressPrefix: r.addressPrefix, nextHopType: r.nextHopType } })
-    )
+      }
+    ]
   }
 }
 
@@ -59,6 +54,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
           routeTable: { id: routeTable.id }
           delegations: empty(s.?delegation ?? '') ? [] : [{ name: 'delegation', properties: { serviceName: s.delegation } }]
           privateLinkServiceNetworkPolicies: (s.?privateLinkServices ?? false) ? 'Disabled' : 'Enabled'
+          serviceEndpoints: map(s.?serviceEndpoints ?? [], e => { service: e })
         }
       }
     ]

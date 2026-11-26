@@ -95,14 +95,20 @@ module spoke '../modules/spoke.bicep' = {
     addressPrefix: '10.4.0.0/24'
     subnets: [
       { name: 'snet-build', addressPrefix: buildPrefix, privateLinkServices: true }
-      { name: 'snet-container', addressPrefix: containerPrefix, delegation: 'Microsoft.ContainerInstance/containerGroups' }
+      // Image Builder's container mounts a file share from its staging storage account (created per
+      // build, so no private endpoint is possible). Microsoft requires a Storage service endpoint on the
+      // delegated subnet when outbound internet is blocked; its routes take Storage traffic directly over
+      // the Azure backbone, ahead of the 0.0.0.0/0 route to the firewall. Without it the container
+      // stays in "Creating".
+      {
+        name: 'snet-container'
+        addressPrefix: containerPrefix
+        delegation: 'Microsoft.ContainerInstance/containerGroups'
+        serviceEndpoints: ['Microsoft.Storage']
+      }
       { name: 'snet-pe', addressPrefix: endpointPrefix }
     ]
     rulePriority: 500
-    // Image Builder's container mounts a file share from its staging storage account over SMB, and
-    // the mount stalls when routed through Azure Firewall (the container stays in "Creating").
-    // Storage traffic goes out directly; everything else still goes through the firewall.
-    routes: [{ name: 'storage-direct', addressPrefix: 'Storage', nextHopType: 'Internet' }]
     ruleCollections: [
       {
         name: 'image-builder-network'
