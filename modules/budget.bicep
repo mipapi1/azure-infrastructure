@@ -1,9 +1,10 @@
-// Monthly subscription budget that emails at 80% of actual spend.
+// Monthly subscription budget that emails as actual spend passes each threshold (percent).
 targetScope = 'subscription'
 
 param amount int
 param startDate string
 param email string
+param thresholds int[] = [25, 50, 75]
 
 resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
   name: 'budget-monthly'
@@ -12,14 +13,16 @@ resource budget 'Microsoft.Consumption/budgets@2024-08-01' = {
     amount: amount
     timeGrain: 'Monthly'
     timePeriod: { startDate: startDate }
-    notifications: {
-      actual80: {
+    notifications: toObject(
+      thresholds,
+      t => 'actual${t}',
+      t => {
         enabled: true
         operator: 'GreaterThanOrEqualTo'
-        threshold: 80
+        threshold: t
         thresholdType: 'Actual'
         contactEmails: [email]
       }
-    }
+    )
   }
 }
