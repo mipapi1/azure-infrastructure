@@ -157,6 +157,7 @@ module rules '../modules/firewall-rules.bicep' = {
             sourceIpGroups: [aksNodesIpGroup]
             targetFqdns: [
               'charts.gitlab.io'
+              'gitlab-charts.s3.amazonaws.com' // chart packages; charts.gitlab.io redirects here
               'registry.gitlab.com'
               'cdn.registry.gitlab-static.net'
               'registry.k8s.io'
