@@ -3,6 +3,11 @@
 // Deploy into resource group rg-hub. Spokes find these resources by name.
 
 param alertEmail string
+@description('Basic: portal connections only. Standard: also native-client SSH/RDP (az network bastion ssh).')
+@allowed(['Basic', 'Standard'])
+param bastionSku string = 'Basic'
+@description('Log Analytics daily ingestion cap in GB; -1 for none.')
+param logDailyCapGb int = -1
 param budgetAmount int = 500
 param budgetStartDate string = utcNow('yyyy-MM-01')
 param location string = resourceGroup().location
@@ -13,6 +18,7 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+    workspaceCapping: { dailyQuotaGb: logDailyCapGb }
   }
 }
 
@@ -92,8 +98,9 @@ resource firewallLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'
 resource bastion 'Microsoft.Network/bastionHosts@2025-07-01' = {
   name: 'bas-hub'
   location: location
-  sku: { name: 'Basic' }
+  sku: { name: bastionSku }
   properties: {
+    enableTunneling: bastionSku == 'Standard'
     ipConfigurations: [
       {
         name: 'ipconfig'

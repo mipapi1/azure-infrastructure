@@ -3,6 +3,9 @@
 
 param adminGroupId string
 param nodeVmSize string = 'Standard_D4ds_v5'
+@description('Starting and minimum node count; the autoscaler adds up to 5.')
+@minValue(1)
+param nodeCount int = 2
 param location string = resourceGroup().location
 
 var nodePrefix = '10.2.0.0/24'
@@ -101,8 +104,8 @@ resource cluster 'Microsoft.ContainerService/managedClusters@2025-07-01' = {
         osSKU: 'AzureLinux'
         vmSize: nodeVmSize
         enableAutoScaling: true
-        count: 2
-        minCount: 2
+        count: nodeCount
+        minCount: nodeCount
         maxCount: 5
         vnetSubnetID: nodeSubnetId
       }
