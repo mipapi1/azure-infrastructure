@@ -1,7 +1,9 @@
 // Compute Gallery and an Image Builder template for the AVD session host image
-// (Windows 11 multi-session with Microsoft 365 Apps, fully patched).
+// (Windows 11 multi-session with Microsoft 365 Apps, fully patched, optionally STIG-hardened).
 // Deploy into resource group rg-image-builder, then run the template.
 
+@description('Apply the DISA STIG GPO package to the image (stig.ps1).')
+param stig bool = false
 param location string = resourceGroup().location
 
 var contributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
@@ -60,10 +62,23 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
       sku: 'win11-25h2-avd-m365'
       version: 'latest'
     }
-    customize: [
-      { type: 'WindowsUpdate', name: 'windows-update' }
-      { type: 'WindowsRestart', name: 'restart' }
-    ]
+    customize: concat(
+      [
+        { type: 'WindowsUpdate', name: 'windows-update' }
+        { type: 'WindowsRestart', name: 'restart' }
+      ],
+      stig
+        ? [
+            {
+              type: 'PowerShell'
+              name: 'stig'
+              runElevated: true
+              runAsSystem: true
+              inline: split(loadTextContent('stig.ps1'), '\n')
+            }
+          ]
+        : []
+    )
     distribute: [
       {
         type: 'SharedImage'

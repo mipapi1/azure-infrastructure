@@ -1,0 +1,112 @@
+# DISA STIG hardening for the Windows 11 AVD image. Runs as the last Image Builder step when
+# `stig = true` in main.bicepparam.
+#
+# How it works:
+#   1. This step downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
+#      and prepares the GPOs in C:\ProgramData\STIG.
+#   2. It replaces C:\DeprovisioningScript.ps1, which Image Builder runs last. That script imports
+#      the GPOs with LGPO and then runs sysprep. The STIG is applied at that point because it denies
+#      network logon to local accounts, which would cut off Image Builder's WinRM session if it were
+#      applied earlier.
+#
+# New package: DISA releases one each quarter (https://public.cyber.mil/stigs/gpo/). Update
+# $packageUrl and $packageSha256 (Get-FileHash <zip>).
+#
+# Not applied, with the reason (report these as findings):
+#   NewAdministratorName      Azure names the admin account at deploy time; rename per VM if required.
+#   Domain principals         "Domain Admins"/"Enterprise Admins" user-rights entries are removed: hosts
+#                             are Entra-joined, not domain-joined.
+#   Firewall local merge      Public profile AllowLocalPolicyMerge is removed: without a domain, the
+#                             Azure agent and extensions need local firewall rules.
+#   BitLocker                 Policy is set, but Azure VMs have no pre-boot PIN; disks use platform
+#                             encryption instead.
+#   Settings outside the GPO  The GPO package doesn't cover every check. Scan a host with DISA SCC
+#                             and record what's left.
+# Check on the first build: Windows 11 STIG sets "Always prompt for password" for Remote Desktop
+# (fPromptForPassword), which can make AVD users enter their password again after Entra SSO.
+
+$ErrorActionPreference = 'Stop'
+trap { Write-Output "STIG: $_"; exit 1 }
+
+$packageUrl = 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_STIG_GPO_Package_July_2026.zip'
+$packageSha256 = 'EED9542AAFE07C6B674A3F6F6634C4987DB45A22F2DAA9F2D9C80B6B93072DE6'
+$lgpoUrl = 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
+$lgpoSha256 = 'CB7159D134A0A1E7B1ED2ADA9A3CE8CE8F4DE391D14403D55438AF824247CC55'
+
+# GPO folders in the package, matched as "DoD <name> ...".
+$include = @('Windows 11', 'Windows Defender Firewall', 'Microsoft Defender Antivirus', 'Microsoft Edge')
+
+$root = "$Env:ProgramData\STIG"
+$gpos = "$root\GPOs"
+New-Item -ItemType Directory -Path $gpos -Force | Out-Null
+
+function Get-Verified([string]$Url, [string]$Sha256, [string]$Destination) {
+    Write-Output "STIG: Downloading $Url"
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $Url -OutFile "$Destination.zip" -UseBasicParsing
+    $hash = (Get-FileHash -LiteralPath "$Destination.zip" -Algorithm SHA256).Hash
+    if ($hash -ne $Sha256) { throw "SHA256 mismatch for ${Url}: got $hash" }
+    Expand-Archive -LiteralPath "$Destination.zip" -DestinationPath $Destination -Force
+    Remove-Item -LiteralPath "$Destination.zip"
+}
+
+Get-Verified $packageUrl $packageSha256 "$Env:TEMP\stig"
+Get-Verified $lgpoUrl $lgpoSha256 "$Env:TEMP\lgpo"
+Copy-Item -LiteralPath (Get-ChildItem "$Env:TEMP\lgpo" -Recurse -Filter LGPO.exe | Select-Object -First 1).FullName -Destination "$root\LGPO.exe"
+
+Write-Output 'STIG: Copying ADMX/ADML templates'
+Get-ChildItem "$Env:TEMP\stig\ADMX Templates" -Recurse -Filter *.admx | Copy-Item -Destination "$Env:SystemRoot\PolicyDefinitions\" -Force
+Get-ChildItem "$Env:TEMP\stig\ADMX Templates" -Recurse -Filter *.adml | Where-Object { $_.Directory.Name -eq 'en-US' } |
+    Copy-Item -Destination "$Env:SystemRoot\PolicyDefinitions\en-US\" -Force
+
+foreach ($name in $include) {
+    $package = Get-ChildItem "$Env:TEMP\stig" -Directory | Where-Object Name -Match "^DoD $([regex]::Escape($name)) " | Select-Object -First 1
+    if (-not $package) { throw "No '$name' GPO in the STIG package" }
+    Write-Output "STIG: Preparing $($package.Name)"
+    Copy-Item -LiteralPath "$($package.FullName)\GPOs" -Destination "$gpos\$($package.Name)" -Recurse
+}
+
+# Security templates: drop the settings listed in the header.
+foreach ($inf in Get-ChildItem $gpos -Recurse -Filter GptTmpl.inf) {
+    $lines = foreach ($line in Get-Content -LiteralPath $inf.FullName -Encoding Unicode) {
+        if ($line -match '^\s*NewAdministratorName\s*=') { continue }
+        if ($line -match '^\s*(Se\w+)\s*=\s*(.*)$') {
+            $members = $Matches[2] -split ',' | ForEach-Object Trim | Where-Object { $_ -and $_ -notmatch '^(ADD YOUR |(.+\\)?(Domain Admins|Enterprise Admins)$)' }
+            "$($Matches[1]) = $($members -join ',')"
+            continue
+        }
+        $line
+    }
+    Set-Content -LiteralPath $inf.FullName -Value $lines -Encoding Unicode
+}
+
+# Registry policy applied after the GPOs (LGPO text format).
+Set-Content -LiteralPath "$root\overrides.txt" -Encoding Unicode -Value @(
+    'Computer', 'SOFTWARE\Policies\Microsoft\WindowsFirewall\PublicProfile', 'AllowLocalPolicyMerge', 'DELETE', ''
+)
+
+Write-Output 'STIG: Staging C:\DeprovisioningScript.ps1'
+Set-Content -LiteralPath 'C:\DeprovisioningScript.ps1' -Encoding UTF8 -Value @'
+$ErrorActionPreference = 'Stop'
+$root = "$Env:ProgramData\STIG"
+foreach ($gpo in Get-ChildItem "$root\GPOs" -Directory) {
+    Write-Output ">>> Applying $($gpo.Name)"
+    & "$root\LGPO.exe" /q /g $gpo.FullName
+    if ($LASTEXITCODE -ne 0) { throw "LGPO /g $($gpo.Name) failed with exit code $LASTEXITCODE" }
+}
+& "$root\LGPO.exe" /q /t "$root\overrides.txt"
+if ($LASTEXITCODE -ne 0) { throw "LGPO /t overrides.txt failed with exit code $LASTEXITCODE" }
+
+Write-Output '>>> Waiting for the Azure guest agent ...'
+while ((Get-Service RdAgent).Status -ne 'Running') { Start-Sleep -s 5 }
+while ((Get-Service WindowsAzureGuestAgent).Status -ne 'Running') { Start-Sleep -s 5 }
+Remove-Item "$Env:SystemRoot\System32\Sysprep\unattend.xml", "$Env:SystemRoot\Panther\unattend.xml" -Force -ErrorAction SilentlyContinue
+
+Write-Output '>>> Sysprepping VM ...'
+& "$Env:SystemRoot\System32\Sysprep\Sysprep.exe" /oobe /generalize /quiet /quit /mode:vm
+while ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State').ImageState -ne 'IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE') { Start-Sleep -s 5 }
+Write-Output '>>> Sysprep complete ...'
+'@
+
+Remove-Item "$Env:TEMP\stig", "$Env:TEMP\lgpo" -Recurse -Force
+Write-Output "STIG: Ready. $($include.Count) GPO set(s) apply before sysprep."
