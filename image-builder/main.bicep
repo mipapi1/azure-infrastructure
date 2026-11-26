@@ -182,7 +182,12 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
               name: 'stig'
               runElevated: true
               runAsSystem: true
-              inline: split(loadTextContent('stig.ps1'), '\n')
+              // Run as a file: Packer indents inline lines, which breaks PowerShell here-strings.
+              inline: [
+                '$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(\'${base64(loadTextContent('stig.ps1'))}\'))'
+                'Set-Content -LiteralPath C:\\Windows\\Temp\\stig.ps1 -Value $s -Encoding UTF8'
+                '& C:\\Windows\\Temp\\stig.ps1; exit $LASTEXITCODE'
+              ]
             }
           ]
         : []
