@@ -101,7 +101,7 @@ resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2024-04-03' = {
 }
 
 resource desktop 'Microsoft.DesktopVirtualization/applicationGroups@2024-04-03' = {
-  name: 'vdag-desktop'
+  name: 'vdag-avd'
   location: location
   properties: {
     applicationGroupType: 'Desktop'
@@ -155,7 +155,7 @@ var useFiles = profileStorageType == 'AzureFiles'
 var storageService = useFiles ? 'file' : 'blob'
 
 resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
-  name: 'stfslogix${uniqueString(resourceGroup().id)}'
+  name: 'stavd${take(uniqueString(subscription().id), 6)}'
   location: location
   kind: useFiles ? 'FileStorage' : 'StorageV2'
   sku: { name: useFiles ? 'Premium_LRS' : 'Standard_LRS' }
@@ -197,7 +197,7 @@ module storageZone '../modules/dns-zone.bicep' = {
 }
 
 resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-fslogix'
+  name: 'pe-avd-${storageService}'
   location: location
   properties: {
     subnet: { id: '${spoke.outputs.vnetId}/subnets/snet-pe' }

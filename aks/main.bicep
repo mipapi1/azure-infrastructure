@@ -78,14 +78,14 @@ resource networkAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 // Private API server without a private DNS zone: its name resolves through public DNS
 // to the private IP, which works with the firewall as DNS server.
 resource cluster 'Microsoft.ContainerService/managedClusters@2025-07-01' = {
-  name: 'aks'
+  name: 'aks-platform'
   location: location
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${controlPlane.id}': {} }
   }
   properties: {
-    dnsPrefix: 'aks'
+    dnsPrefix: 'aks-platform'
     enableRBAC: true
     disableLocalAccounts: true
     aadProfile: {
@@ -143,7 +143,7 @@ resource clusterAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // Public access stays on so `az acr build` can push; the cluster pulls through the private endpoint.
 resource registry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
-  name: 'craks${uniqueString(resourceGroup().id)}'
+  name: 'craks${take(uniqueString(subscription().id), 6)}'
   location: location
   sku: { name: 'Premium' }
   properties: {
@@ -170,7 +170,7 @@ module registryZone '../modules/dns-zone.bicep' = {
 }
 
 resource registryEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-acr'
+  name: 'pe-aks-registry'
   location: location
   properties: {
     subnet: { id: '${spoke.outputs.vnetId}/subnets/snet-pe' }

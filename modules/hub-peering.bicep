@@ -9,7 +9,7 @@ resource hubVnet 'Microsoft.Network/virtualNetworks@2025-07-01' existing = {
 
 resource toSpoke 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2025-07-01' = {
   parent: hubVnet
-  name: 'to-${name}'
+  name: 'peer-hub-to-${name}'
   properties: {
     remoteVirtualNetwork: { id: spokeVnetId }
     allowVirtualNetworkAccess: true

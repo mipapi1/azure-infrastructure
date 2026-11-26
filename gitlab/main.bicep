@@ -17,7 +17,7 @@ var ingressIp = '10.2.0.250'
 
 // GitLab signs in with the password; people sign in with Entra ID through the admin group.
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
-  name: 'psql-gitlab-${uniqueString(resourceGroup().id)}'
+  name: 'psql-gitlab-${take(uniqueString(subscription().id), 6)}'
   location: postgresLocation
   sku: { name: 'Standard_B2ms', tier: 'Burstable' }
   properties: {
@@ -78,7 +78,7 @@ resource peSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-07-01' existin
 }
 
 resource postgresEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-postgres'
+  name: 'pe-gitlab-postgres'
   location: location
   properties: {
     subnet: { id: peSubnet.id }
@@ -118,7 +118,7 @@ module rules '../modules/firewall-rules.bicep' = {
   name: 'firewall-rules-gitlab'
   scope: resourceGroup('rg-hub')
   params: {
-    name: 'gitlab'
+    name: 'rcg-gitlab'
     priority: 300
     ruleCollections: [
       {

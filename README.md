@@ -73,6 +73,10 @@ flowchart LR
 
 Every spoke sends all traffic to the hub firewall (`0.0.0.0/0` route) and uses it as its DNS server, so the private DNS zones linked to the hub resolve everywhere. Each stack adds its own allow rules to the firewall policy as a rule collection group. Every spoke subnet has an IP group in `rg-hub` (`ipg-<spoke>-<subnet>`), and rules use those IP groups as their sources.
 
+## Naming
+
+Resources are named `<type>-<workload>[-<detail>]` with the [Cloud Adoption Framework abbreviations](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations): `rg-avd`, `vnet-avd`, `afw-hub`, `aks-platform`, `pe-gitlab-postgres`, `ipg-aks-snet-nodes`, `rcg-aks`. Names that must be globally unique add a 6-character suffix derived from the subscription (`kv-hub-<sfx>`, `psql-gitlab-<sfx>`), without hyphens where Azure doesn't allow them (`craks<sfx>`, `stavd<sfx>`). The gallery is `gal_images` because gallery names can't contain hyphens.
+
 ## Prerequisites
 
 - Azure CLI (`az bicep` installs on first use)

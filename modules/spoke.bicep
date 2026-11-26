@@ -61,7 +61,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
 
 resource toHub 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2025-07-01' = {
   parent: vnet
-  name: 'to-hub'
+  name: 'peer-${name}-to-hub'
   properties: {
     remoteVirtualNetwork: { id: hubVnet.id }
     allowVirtualNetworkAccess: true
@@ -92,7 +92,7 @@ module rules 'firewall-rules.bicep' = {
   name: 'firewall-rules-${name}'
   scope: resourceGroup('rg-hub')
   params: {
-    name: name
+    name: 'rcg-${name}'
     priority: rulePriority
     ruleCollections: ruleCollections
   }

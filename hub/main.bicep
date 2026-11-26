@@ -86,7 +86,7 @@ resource firewall 'Microsoft.Network/azureFirewalls@2025-07-01' = {
 }
 
 resource firewallLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'law-hub'
+  name: 'diag-afw-hub'
   scope: firewall
   properties: {
     workspaceId: workspace.id
@@ -116,7 +116,7 @@ resource bastion 'Microsoft.Network/bastionHosts@2025-07-01' = {
 // Platform secrets. RBAC only, no public access. Purge protection is off so a torn-down sandbox
 // can be purged and redeployed; turn it on for production and for customer-managed keys.
 resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
-  name: 'kv-hub-${uniqueString(resourceGroup().id)}'
+  name: 'kv-hub-${take(uniqueString(subscription().id), 6)}'
   location: location
   properties: {
     tenantId: tenant().tenantId
@@ -129,7 +129,7 @@ resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
 }
 
 resource vaultLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'law-hub'
+  name: 'diag-kv-hub'
   scope: vault
   properties: {
     workspaceId: workspace.id
@@ -146,7 +146,7 @@ module vaultZone '../modules/dns-zone.bicep' = {
 }
 
 resource vaultEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-vault'
+  name: 'pe-hub-vault'
   location: location
   properties: {
     subnet: { id: '${vnet.id}/subnets/snet-pe' }

@@ -83,7 +83,7 @@ Run every command from the repository root. The examples use `eastus`.
    ```bash
    az group create -n rg-aks -l eastus
    az deployment group create -g rg-aks -f aks/main.bicep -p aks/main.bicepparam
-   az aks command invoke -g rg-aks -n aks --command "kubectl get nodes"
+   az aks command invoke -g rg-aks -n aks-platform --command "kubectl get nodes"
    ```
 
 10. App. Edit `apps/web-app.yaml`: `<registry-name>` (`az acr list -g rg-aks --query [0].name -o tsv`).
@@ -94,7 +94,7 @@ Run every command from the repository root. The examples use `eastus`.
    #   az acr login -n <registry-name>
    #   docker build --platform linux/amd64 -t <registry-name>.azurecr.io/web-app:1 apps
    #   docker push <registry-name>.azurecr.io/web-app:1
-   az aks command invoke -g rg-aks -n aks --file apps/web-app.yaml --command "kubectl apply -f web-app.yaml"
+   az aks command invoke -g rg-aks -n aks-platform --file apps/web-app.yaml --command "kubectl apply -f web-app.yaml"
    ```
 
 11. GitLab. Edit `gitlab/main.bicepparam`: `dbAdminGroupId` and `dbAdminGroupName` (gitlab-db-admins). If PostgreSQL fails with `The value of the 'Version' should be in: []`, the subscription can't create servers in this region: add `-p postgresLocation=<region>` (check with `az postgres flexible-server list-skus -l <region>`) and add that region to `allowedLocations` in governance.
@@ -108,11 +108,11 @@ Run every command from the repository root. The examples use `eastus`.
     Edit `gitlab/values.yaml`: `<postgres-server>` (`az postgres flexible-server list -g rg-gitlab --query [0].name -o tsv`).
 
     ```bash
-    az aks command invoke -g rg-aks -n aks --file gitlab/values.yaml --command "\
+    az aks command invoke -g rg-aks -n aks-platform --file gitlab/values.yaml --command "\
       kubectl create namespace gitlab && \
       kubectl -n gitlab create secret generic gitlab-postgres --from-literal=password='$GITLAB_DB_PASSWORD' && \
       helm install gitlab gitlab --repo https://charts.gitlab.io --version 10.4.3 -n gitlab -f values.yaml"
-    az aks command invoke -g rg-aks -n aks --command \
+    az aks command invoke -g rg-aks -n aks-platform --command \
       "kubectl -n gitlab get secret gitlab-gitlab-initial-root-password -o jsonpath='{.data.password}' | base64 -d"
     ```
 
