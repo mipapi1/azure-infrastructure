@@ -84,6 +84,9 @@ global:
       tmpBucket: tmp
 
 installCertmanager: false
+# Required by the chart even with cert-manager off; not used (no certificates are issued).
+certmanager-issuer:
+  email: gitlab@gitlab.internal
 postgresql:
   install: false
 redis:
