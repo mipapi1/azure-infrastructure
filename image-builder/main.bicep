@@ -44,6 +44,15 @@ module spoke '../modules/spoke.bicep' = {
             destinationPorts: ['1688']
           }
           {
+            // Image Builder's container mounts a file share from its staging storage account.
+            ruleType: 'NetworkRule'
+            name: 'container-file-share'
+            ipProtocols: ['TCP']
+            sourceIpGroups: [containerIpGroup]
+            destinationAddresses: ['Storage']
+            destinationPorts: ['445']
+          }
+          {
             ruleType: 'NetworkRule'
             name: 'ntp'
             ipProtocols: ['UDP']
