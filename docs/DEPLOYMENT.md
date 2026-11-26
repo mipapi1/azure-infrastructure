@@ -54,7 +54,7 @@ Run every command from the repository root. The examples use `eastus`.
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
-   If a build fails with `SkuNotAvailable`, pick a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`, delete the templates (`az image builder delete`) and redeploy with `-p buildVmSize=<size>`.
+   Image templates can't be updated. To change one (a script, `stig`, the build size), delete it with `az image builder delete -g rg-image-builder -n <template>` and deploy again. If a build fails with `SkuNotAvailable`, redeploy that way with `-p buildVmSize=<size>`, picking a size from `az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv`.
 
 7. Jumpbox (optional). An Ubuntu VM from the hardened image, reached through Bastion. `az network bastion ssh` needs the hub deployed with `-p bastionSku=Standard`.
 
