@@ -2,7 +2,8 @@
 # `stig = true` in main.bicepparam.
 #
 # How it works:
-#   1. This step downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
+#   1. This step applies supplemental settings the GPO package doesn't cover (TLS protocols and
+#      ciphers, .NET strong crypto, DEP, PowerShell 2.0, password expiry, auditing), downloads the DISA STIG GPO package and Microsoft LGPO, checks their SHA256,
 #      and prepares the GPOs in C:\ProgramData\STIG.
 #   2. It replaces C:\DeprovisioningScript.ps1, which Image Builder runs last. That script imports
 #      the GPOs with LGPO and then runs sysprep. The STIG is applied at that point because it denies
@@ -79,6 +80,53 @@ foreach ($inf in Get-ChildItem $gpos -Recurse -Filter GptTmpl.inf) {
     }
     Set-Content -LiteralPath $inf.FullName -Value $lines -Encoding Unicode
 }
+
+# STIG and baseline settings the GPO package doesn't set. Applied now: none affect the build connection.
+Write-Output 'STIG: Supplemental settings'
+function Set-Reg([string]$Path, [string]$Name, $Value, [string]$Type = 'DWord') {
+    New-Item -Path $Path -Force | Out-Null
+    New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+}
+# Protocols: SSL 2.0/3.0 and TLS 1.0/1.1 off, TLS 1.2/1.3 on.
+$schannel = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols'
+foreach ($protocol in 'SSL 2.0', 'SSL 3.0', 'TLS 1.0', 'TLS 1.1') {
+    foreach ($side in 'Server', 'Client') {
+        Set-Reg "$schannel\$protocol\$side" Enabled 0
+        Set-Reg "$schannel\$protocol\$side" DisabledByDefault 1
+    }
+}
+foreach ($protocol in 'TLS 1.2', 'TLS 1.3') { foreach ($side in 'Server', 'Client') { Set-Reg "$schannel\$protocol\$side" Enabled 1 } }
+# Weak cipher suites and key exchanges out of the TLS cipher list.
+$suites = 'HKLM:\SYSTEM\CurrentControlSet\Control\Cryptography\Configuration\Local\SSL\00010002'
+$functions = (Get-ItemProperty -Path $suites -Name Functions -ErrorAction SilentlyContinue).Functions
+if ($functions) {
+    $strong = @($functions | Where-Object { $_ -notmatch '_(NULL|RC2|RC4|DES|IDEA|3DES|PSK|EXPORT|ANON)_' })
+    Set-Reg $suites Functions $strong MultiString
+}
+# .NET uses the OS TLS defaults and strong cryptography.
+foreach ($net in 'Microsoft', 'Wow6432Node\Microsoft') {
+    foreach ($version in 'v2.0.50727', 'v4.0.30319') {
+        Set-Reg "HKLM:\SOFTWARE\$net\.NETFramework\$version" SchUseStrongCrypto 1
+        Set-Reg "HKLM:\SOFTWARE\$net\.NETFramework\$version" SystemDefaultTlsVersions 1
+    }
+}
+# V-253359: no "Run as different user" in context menus.
+foreach ($class in 'batfile', 'cmdfile', 'exefile', 'mscfile') {
+    Set-Reg "HKLM:\SOFTWARE\Classes\$class\shell\runasuser" SuppressionPolicy 4096
+}
+# V-253283: DEP for everything except opt-outs.
+& bcdedit.exe /set '{current}' nx OptOut | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "bcdedit nx OptOut failed with exit code $LASTEXITCODE" }
+# V-253285: PowerShell 2.0 removed (recent builds don't ship it).
+foreach ($feature in 'MicrosoftWindowsPowerShellV2Root', 'MicrosoftWindowsPowerShellV2') {
+    $state = Get-WindowsOptionalFeature -Online -FeatureName $feature -ErrorAction SilentlyContinue
+    if ($state -and $state.State -eq 'Enabled') { Disable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart | Out-Null }
+}
+# V-253273: local account passwords expire.
+Get-LocalUser | Where-Object Enabled | Set-LocalUser -PasswordNeverExpires $false
+# Audit Other Policy Change Events (success).
+& auditpol.exe /set /subcategory:"Other Policy Change Events" /success:enable | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "auditpol failed with exit code $LASTEXITCODE" }
 
 # Registry policy applied after the GPOs (LGPO text format).
 Set-Content -LiteralPath "$root\overrides.txt" -Encoding Unicode -Value @(
