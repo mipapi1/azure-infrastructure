@@ -24,3 +24,8 @@ param stig = true
 
 // Your object ID (az ad signed-in-user show --query id -o tsv), so publish.sh can upload.
 param publisherIds = ['<publisher-object-id>']
+
+// Build VM. Pick a size your subscription can use in the region:
+// az vm list-skus -l eastus --resource-type virtualMachines --query "[?length(restrictions)==\`0\`].name" -o tsv
+param buildVmSize = 'Standard_D2as_v4'
+param buildTimeoutInMinutes = 240
