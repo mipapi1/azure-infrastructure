@@ -1,8 +1,0 @@
-// Most frequent FSLogix error messages, last 7 days, with affected hosts.
-Event
-| where TimeGenerated > ago(7d)
-| where Source == "Microsoft-FSLogix-Apps" and EventLevelName == "Error"
-| where Computer startswith "<host-prefix>"
-| extend Message = substring(RenderedDescription, 0, 200)
-| summarize Count = count(), Hosts = dcount(Computer), Last = max(TimeGenerated) by EventID, Message
-| order by Count desc
