@@ -151,7 +151,7 @@ Run every command from the repository root. The examples use `eastus`.
         azure_v2:
           accountname: $storage
           container: registry
-          credentialstype: default_credentials
+          credentials_type: default_credentials
           realm: core.windows.net
       backup: |
         azure_storage_account_name: $storage
