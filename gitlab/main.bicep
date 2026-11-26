@@ -159,6 +159,7 @@ module rules '../modules/firewall-rules.bicep' = {
               'charts.gitlab.io'
               'gitlab-charts.s3.amazonaws.com' // chart packages; charts.gitlab.io redirects here
               'registry.gitlab.com'
+              'gitlab.com' // registry.gitlab.com issues pull tokens from gitlab.com/jwt/auth
               'cdn.registry.gitlab-static.net'
               'registry.k8s.io'
               '*.pkg.dev'
