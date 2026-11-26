@@ -184,6 +184,11 @@ module spoke '../modules/spoke.bicep' = {
               'oneocsp.microsoft.com'
               'www.microsoft.com'
               'ctldl.windowsupdate.com'
+              'www.msftconnecttest.com' // Windows network connectivity check
+              'www.msftncsi.com'
+              'crl3.digicert.com'
+              'ocsp.digicert.com'
+              'validation-v2.sls.microsoft.com' // Windows licensing validation
               'azure.archive.ubuntu.com'
               'archive.ubuntu.com'
               'security.ubuntu.com'
