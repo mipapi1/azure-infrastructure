@@ -6,7 +6,9 @@
 # New SSG release: update ssg_version and ssg_sha256 (sha256sum <zip>).
 #
 # Not applied, with the reason (report these as findings):
-#   sudo_remove_nopasswd   The Azure admin account is key-only and uses passwordless sudo.
+#   sudo_remove_nopasswd,  The Azure admin account is key-only and has no password, so it needs
+#   sudo_require_authentication  passwordless sudo (both rules remove NOPASSWD). Image Builder's
+#                          build user does too: without it the build hangs at a sudo prompt.
 #   FIPS mode              FIPS modules need Ubuntu Pro.
 #   GRUB password          Needs a per-VM secret and would stop unattended boots; the serial
 #                          console already requires Azure RBAC.
@@ -15,7 +17,7 @@ set -euo pipefail
 
 ssg_version=0.1.82
 ssg_sha256=765e84bdce7f9055f9b9c2dd0ee2b713d4255f8eec94eac6d35ea4973c28919c
-excludes=(sudo_remove_nopasswd)
+excludes=(sudo_remove_nopasswd sudo_require_authentication)
 
 dir=/usr/local/share/stig
 log=/var/log/stig
