@@ -14,7 +14,8 @@ Run every command from the repository root. The examples use `eastus`.
    for p in Microsoft.Management Microsoft.Network Microsoft.Compute Microsoft.Storage \
             Microsoft.OperationalInsights Microsoft.Insights Microsoft.ManagedIdentity \
             Microsoft.ContainerService Microsoft.ContainerRegistry Microsoft.ContainerInstance \
-            Microsoft.VirtualMachineImages Microsoft.DesktopVirtualization Microsoft.DBforPostgreSQL; do
+            Microsoft.VirtualMachineImages Microsoft.DesktopVirtualization Microsoft.DBforPostgreSQL \
+            Microsoft.KeyVault Microsoft.SecurityInsights; do
      az provider register --namespace "$p"
    done
    az provider list --query "[?registrationState=='Registering'].namespace" -o tsv
@@ -44,7 +45,7 @@ Run every command from the repository root. The examples use `eastus`.
    az deployment group create -g rg-hub -f hub/main.bicep -p hub/main.bicepparam
    ```
 
-6. Image Builder. No edits. The image build takes 1 to 2 hours.
+6. Image Builder. For a STIG-hardened image, set `stig = true` in `image-builder/main.bicepparam`. The image build takes 1 to 2 hours.
 
    ```bash
    az group create -n rg-image-builder -l eastus
@@ -52,7 +53,7 @@ Run every command from the repository root. The examples use `eastus`.
    az image builder run -g rg-image-builder -n it-win11-avd
    ```
 
-7. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins).
+7. AVD. Edit `avd/main.bicepparam`: `userGroupId` (avd-users), `adminGroupId` (avd-admins). FSLogix profiles go to an Azure Files share by default; set `profileStorageType = 'BlobCloudCache'` for blob storage instead (use it with a STIG image).
 
    ```bash
    export AVD_ADMIN_PASSWORD='<session host local admin password>'
@@ -60,7 +61,7 @@ Run every command from the repository root. The examples use `eastus`.
    az deployment group create -g rg-avd -f avd/main.bicep -p avd/main.bicepparam
    ```
 
-   Sign in at <https://windows.cloud.microsoft> as a member of avd-users.
+   Sign in at <https://windows.cloud.microsoft> as a member of avd-users. Your profile is saved by FSLogix and follows you to any session host.
 
 8. AKS. Edit `aks/main.bicepparam`: `adminGroupId` (aks-admins).
 
@@ -101,7 +102,9 @@ Run every command from the repository root. The examples use `eastus`.
 11. Tear down. Delete the workloads before the hub, then remove governance.
 
     ```bash
+    vault=$(az keyvault list -g rg-hub --query [0].name -o tsv)
     for rg in rg-gitlab rg-aks rg-avd rg-image-builder rg-hub; do az group delete -n "$rg" --yes; done
+    az keyvault purge -n "$vault"
     az policy assignment delete -n allowed-locations --scope /providers/Microsoft.Management/managementGroups/alz
     az policy assignment delete -n security-benchmark --scope /providers/Microsoft.Management/managementGroups/alz
     az account management-group subscription remove -n alz-landingzones -s "$(az account show --query id -o tsv)"
