@@ -2,13 +2,117 @@
 //   win11-avd         AVD session hosts: Windows 11 multi-session with Microsoft 365 Apps, fully
 //                     patched, optionally STIG-hardened (stig).
 //   ubuntu-2404-stig  Linux VMs: Ubuntu 24.04 LTS, patched and STIG-hardened (stig-linux.sh).
-// Deploy into resource group rg-image-builder, then run the template.
+// Builds run in a spoke peered to the hub: the build VM and Image Builder's container (Packer) sit in
+// their own subnets and reach the internet only through the hub firewall, which allows the
+// endpoints below. Deploy into resource group rg-image-builder after the hub, then run the templates.
 
 @description('Apply the DISA STIG GPO package to the image (stig.ps1).')
 param stig bool = false
 @description('Build VM size. Two builds at 2 vCPUs each fit a 4 vCPU regional quota.')
 param buildVmSize string = 'Standard_D2s_v5'
 param location string = resourceGroup().location
+
+var buildPrefix = '10.4.0.0/25'
+var containerPrefix = '10.4.0.128/27'
+
+module spoke '../modules/spoke.bicep' = {
+  name: 'spoke-image-builder'
+  params: {
+    name: 'image-builder'
+    location: location
+    addressPrefix: '10.4.0.0/24'
+    subnets: [
+      { name: 'snet-build', addressPrefix: buildPrefix }
+      { name: 'snet-container', addressPrefix: containerPrefix, delegation: 'Microsoft.ContainerInstance/containerGroups' }
+    ]
+    rulePriority: 500
+    ruleCollections: [
+      {
+        name: 'image-builder-network'
+        ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
+        priority: 100
+        action: { type: 'Allow' }
+        rules: [
+          {
+            ruleType: 'NetworkRule'
+            name: 'windows-activation'
+            ipProtocols: ['TCP']
+            sourceAddresses: [buildPrefix]
+            destinationFqdns: ['azkms.${environment().suffixes.storage}', 'kms.${environment().suffixes.storage}']
+            destinationPorts: ['1688']
+          }
+          {
+            ruleType: 'NetworkRule'
+            name: 'ntp'
+            ipProtocols: ['UDP']
+            sourceAddresses: [buildPrefix]
+            destinationFqdns: ['time.windows.com', 'ntp.ubuntu.com']
+            destinationPorts: ['123']
+          }
+        ]
+      }
+      {
+        name: 'image-builder-application'
+        ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
+        priority: 200
+        action: { type: 'Allow' }
+        rules: [
+          {
+            // Packer calls Azure Resource Manager and Entra ID and writes logs to the staging account.
+            ruleType: 'ApplicationRule'
+            name: 'image-builder-container'
+            protocols: [{ protocolType: 'Https', port: 443 }]
+            sourceAddresses: [containerPrefix]
+            targetFqdns: [
+              split(environment().resourceManager, '/')[2]
+              split(environment().authentication.loginEndpoint, '/')[2]
+              'mcr.microsoft.com'
+              '*.data.mcr.microsoft.com'
+              'packages.microsoft.com'
+              '*.blob.${environment().suffixes.storage}'
+            ]
+          }
+          {
+            ruleType: 'ApplicationRule'
+            name: 'os-updates'
+            protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
+            sourceAddresses: [buildPrefix]
+            fqdnTags: ['WindowsUpdate', 'WindowsDiagnostics', 'MicrosoftActiveProtectionService']
+          }
+          {
+            // Defender, certificate revocation, Ubuntu repositories, STIG content (stig.ps1, stig-linux.sh).
+            ruleType: 'ApplicationRule'
+            name: 'build-downloads'
+            protocols: [{ protocolType: 'Https', port: 443 }, { protocolType: 'Http', port: 80 }]
+            sourceAddresses: [buildPrefix]
+            targetFqdns: [
+              'go.microsoft.com'
+              'definitionupdates.microsoft.com'
+              'crl.microsoft.com'
+              'oneocsp.microsoft.com'
+              'www.microsoft.com'
+              'ctldl.windowsupdate.com'
+              'azure.archive.ubuntu.com'
+              'archive.ubuntu.com'
+              'security.ubuntu.com'
+              'esm.ubuntu.com'
+              'download.microsoft.com'
+              'dl.dod.cyber.mil'
+              'github.com'
+              'objects.githubusercontent.com'
+              'release-assets.githubusercontent.com'
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+var vnetConfig = {
+  subnetId: '${spoke.outputs.vnetId}/subnets/snet-build'
+  containerInstanceSubnetId: '${spoke.outputs.vnetId}/subnets/snet-container'
+}
 
 var contributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
 
@@ -58,7 +162,7 @@ resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
   }
   properties: {
     buildTimeoutInMinutes: 240
-    vmProfile: { vmSize: buildVmSize }
+    vmProfile: { vmSize: buildVmSize, vnetConfig: vnetConfig }
     source: {
       type: 'PlatformImage'
       publisher: 'MicrosoftWindowsDesktop'
@@ -121,7 +225,7 @@ resource linuxTemplate 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01
   }
   properties: {
     buildTimeoutInMinutes: 120
-    vmProfile: { vmSize: buildVmSize }
+    vmProfile: { vmSize: buildVmSize, vnetConfig: vnetConfig }
     source: {
       type: 'PlatformImage'
       publisher: 'Canonical'

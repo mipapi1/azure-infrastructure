@@ -6,7 +6,8 @@ An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual D
 |---|---|
 | `governance` | Management groups, subscription placement, two baseline policies |
 | `hub` | Hub network, Azure Firewall (egress and DNS for every spoke), Bastion, Log Analytics with Sentinel, Key Vault, budget |
-| `image-builder` | Compute Gallery and an Image Builder template for the AVD image, optionally STIG-hardened |
+| `image-builder` | Image Builder spoke, Compute Gallery, templates for the AVD image (STIG optional) and a STIG-hardened Ubuntu image |
+| `jumpbox` | Jumpbox spoke and an Ubuntu VM from the hardened image (or Marketplace), reached through Bastion |
 | `avd` | AVD spoke, host pool, desktop, workspace, FSLogix profile storage, Entra-joined session hosts |
 | `aks` | AKS spoke, private cluster with Entra ID RBAC, private container registry |
 | `apps` | Sample web app (Dockerfile and Kubernetes manifest) |
@@ -29,9 +30,9 @@ flowchart LR
     dns["Private DNS zones<br/>vault · file/blob · acr · postgres · gitlab.internal"]
   end
 
-  subgraph aib["rg-image-builder"]
-    it["Image Builder template<br/>Win11 M365 · updates · STIG (optional)"]
-    gal["Compute Gallery<br/>win11-avd"]
+  subgraph aib["rg-image-builder · vnet-image-builder 10.4.0.0/24"]
+    it["Image Builder templates<br/>Win11 M365 (STIG optional) · Ubuntu 24.04 STIG"]
+    gal["Compute Gallery<br/>win11-avd · ubuntu-2404-stig"]
   end
 
   subgraph avd["rg-avd · vnet-avd 10.1.0.0/23"]
@@ -47,11 +48,16 @@ flowchart LR
     gl["GitLab (Helm)"]
   end
 
+  subgraph jb["rg-jumpbox · vnet-jumpbox 10.3.0.0/24"]
+    vm["Ubuntu jumpbox<br/>hardened image · via Bastion"]
+  end
+
   subgraph glrg["rg-gitlab"]
     pg["PostgreSQL<br/>private endpoint"]
   end
 
   it --> gal --> sh
+  gal --> vm
   hp --- sh
   sh --> fsl
   acr --> k8s --- app
@@ -59,6 +65,8 @@ flowchart LR
   sh -- "443 / 22" --> afw --> gl
   avd <-. peering .-> hub
   aks <-. peering .-> hub
+  aib <-. peering .-> hub
+  jb <-. peering .-> hub
   afw -- logs --> law
   afw --> internet(("Internet"))
 ```

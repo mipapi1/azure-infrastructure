@@ -3,6 +3,7 @@
 
 param name string
 param addressPrefix string
+@description('[{ name, addressPrefix, delegation? }] where delegation is a service name, e.g. Microsoft.ContainerInstance/containerGroups.')
 param subnets array
 param ruleCollections array
 param rulePriority int
@@ -50,6 +51,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
         properties: {
           addressPrefix: s.addressPrefix
           routeTable: { id: routeTable.id }
+          delegations: empty(s.?delegation ?? '') ? [] : [{ name: 'delegation', properties: { serviceName: s.delegation } }]
         }
       }
     ]
