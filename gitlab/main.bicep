@@ -1,8 +1,19 @@
-// GitLab on the AKS cluster with managed backing services, each on a private endpoint in the AKS
-// spoke: PostgreSQL, Azure Managed Redis, and blob storage for every GitLab object type, the
-// container registry and backups. GitLab reaches blob storage with workload identity (no storage
-// keys). Also the DNS name gitlab.gitlab.internal and firewall rules for the chart's images.
-// Deploy into resource group rg-gitlab, then install the chart (values.yaml).
+// GitLab on its own AKS cluster (aks/clusters/gitlab.bicepparam) with managed backing services, each on a
+// private endpoint in that cluster's spoke: PostgreSQL, Azure Managed Redis, and blob storage for every
+// GitLab object type, the container registry and backups. GitLab reaches blob storage with workload
+// identity (no storage keys). Also the DNS name gitlab.gitlab.internal and firewall rules for the
+// chart's images. Deploy into the cluster's resource group <env>-rg-<workload>-<cluster>, then install
+// the chart (values.yaml).
+import { envCode, name, uniqueName, compactName } from '../modules/naming.bicep'
+
+@description('Environment: p (prod) or s (staging).')
+param env envCode
+@description('Workload name used in every resource name: <env>-<type>-<workload>-<component>.')
+param workload string
+@description('The AKS cluster GitLab runs on (aks/clusters/<cluster>.bicepparam).')
+param cluster string = 'gitlab'
+@description('Internal load balancer IP of GitLab\'s ingress, in the cluster\'s node subnet (values.yaml uses the same).')
+param ingressIp string = '10.5.0.250'
 
 param dbAdminGroupId string
 param dbAdminGroupName string
@@ -15,16 +26,15 @@ param postgresLocation string = location
 @description('Azure Managed Redis SKU. Balanced_B0 is the smallest; use a larger Balanced SKU for real use.')
 param redisSku string = 'Balanced_B0'
 
-var suffix = take(uniqueString(subscription().id), 6)
 
 // IP groups created with the AVD and AKS spokes.
-var avdHostsIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-avd-snet-hosts')
-var aksNodesIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-aks-snet-nodes')
-var ingressIp = '10.2.0.250'
+var hubGroup = name(env, 'rg', workload, 'hub')
+var avdHostsIpGroup = resourceId(hubGroup, 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, 'avd-hosts'))
+var nodesIpGroup = resourceId(hubGroup, 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, '${cluster}-nodes'))
 
 // GitLab signs in with the password; people sign in with Entra ID through the admin group.
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
-  name: 'psql-gitlab-${take(uniqueString(subscription().id), 6)}'
+  name: uniqueName(env, 'psql', workload, 'gitlab', subscription().id)
   location: postgresLocation
   sku: { name: 'Standard_B2ms', tier: 'Burstable' }
   properties: {
@@ -73,19 +83,20 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-0
 
 module postgresZone '../modules/dns-zone.bicep' = {
   name: 'dns-postgres'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.postgres.database.azure.com'
   }
 }
 
 resource peSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-07-01' existing = {
-  name: 'vnet-aks/snet-pe'
-  scope: resourceGroup('rg-aks')
+  name: '${name(env, 'vnet', workload, cluster)}/snet-pe'
 }
 
 resource postgresEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-gitlab-postgres'
+  name: name(env, 'pep', workload, 'gitlab-postgres')
   location: location
   properties: {
     subnet: { id: peSubnet.id }
@@ -114,8 +125,10 @@ resource postgresDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@20
 // The chart's ingress controller gets this fixed internal IP (values.yaml).
 module gitlabZone '../modules/dns-zone.bicep' = {
   name: 'dns-gitlab'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'gitlab.internal'
     aRecords: [{ name: 'gitlab', ip: ingressIp }]
   }
@@ -123,8 +136,10 @@ module gitlabZone '../modules/dns-zone.bicep' = {
 
 module rules '../modules/firewall-rules.bicep' = {
   name: 'firewall-rules-gitlab'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'rcg-gitlab'
     priority: 300
     ruleCollections: [
@@ -154,7 +169,7 @@ module rules '../modules/firewall-rules.bicep' = {
             ruleType: 'ApplicationRule'
             name: 'chart-and-images'
             protocols: [{ protocolType: 'Https', port: 443 }]
-            sourceIpGroups: [aksNodesIpGroup]
+            sourceIpGroups: [nodesIpGroup]
             targetFqdns: [
               'charts.gitlab.io'
               'gitlab-charts.s3.amazonaws.com' // chart packages; charts.gitlab.io redirects here
@@ -177,13 +192,12 @@ module rules '../modules/firewall-rules.bicep' = {
 // Object storage --------------------------------------------------------------------------------
 // GitLab's pods (service account gitlab in namespace gitlab) sign in as id-gitlab through the
 // cluster's OIDC issuer. No storage keys exist.
-resource cluster 'Microsoft.ContainerService/managedClusters@2025-07-01' existing = {
-  name: 'aks-platform'
-  scope: resourceGroup('rg-aks')
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2025-07-01' existing = {
+  name: name(env, 'aks', workload, cluster)
 }
 
 resource gitlabIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
-  name: 'id-gitlab'
+  name: name(env, 'id', workload, 'gitlab-workload')
   location: location
 }
 
@@ -191,14 +205,14 @@ resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedI
   parent: gitlabIdentity
   name: 'gitlab'
   properties: {
-    issuer: cluster.properties.oidcIssuerProfile.issuerURL
+    issuer: aksCluster.properties.oidcIssuerProfile.issuerURL
     subject: 'system:serviceaccount:gitlab:gitlab'
     audiences: ['api://AzureADTokenExchange']
   }
 }
 
 resource objectStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
-  name: 'stgitlab${suffix}'
+  name: compactName(env, 'st', workload, 'gitlab', subscription().id)
   location: location
   kind: 'StorageV2'
   sku: { name: 'Standard_LRS' }
@@ -250,14 +264,16 @@ resource objectAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 module blobZone '../modules/dns-zone.bicep' = {
   name: 'dns-blob'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.blob.${environment().suffixes.storage}'
   }
 }
 
 resource blobEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-gitlab-blob'
+  name: name(env, 'pep', workload, 'gitlab-blob')
   location: location
   properties: {
     subnet: { id: peSubnet.id }
@@ -287,7 +303,7 @@ resource blobDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-0
 // Azure Managed Redis. GitLab doesn't support Redis Cluster: the EnterpriseCluster policy presents
 // one non-clustered endpoint, TLS on port 10000. GitLab signs in with the access key.
 resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' = {
-  name: 'redis-gitlab-${suffix}'
+  name: uniqueName(env, 'redis', workload, 'gitlab', subscription().id)
   location: location
   sku: { name: redisSku }
   properties: {
@@ -311,14 +327,16 @@ resource redisDatabase 'Microsoft.Cache/redisEnterprise/databases@2025-07-01' = 
 
 module redisZone '../modules/dns-zone.bicep' = {
   name: 'dns-redis'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.redis.azure.net'
   }
 }
 
 resource redisEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-gitlab-redis'
+  name: name(env, 'pep', workload, 'gitlab-redis')
   location: location
   properties: {
     subnet: { id: peSubnet.id }
