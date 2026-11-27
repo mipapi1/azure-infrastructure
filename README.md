@@ -1,6 +1,6 @@
 # azure-infrastructure
 
-An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual Desktop, AKS, a sample app and GitLab. Everything runs in one subscription and one region, and each stack finds the others by fixed resource names.
+An Azure platform built as infrastructure as code with Bicep: a hub network with a firewall, Azure Virtual Desktop, AKS, a sample app and GitLab. Everything runs in one subscription and one region, and each stack finds the others by fixed resource names.
 
 ## What's inside
 
@@ -29,6 +29,15 @@ An Azure platform in plain Bicep: a hub network with a firewall, Azure Virtual D
 <sub>🟨 governance &nbsp; 🟥 security and edge &nbsp; 🟦 network and compute &nbsp; 🟩 data and storage &nbsp; 🟪 monitoring &nbsp; 🟧 images and CI. Source: <a href="docs/diagrams/platform.mmd">docs/diagrams/platform.mmd</a>.</sub>
 
 Every spoke sends all traffic to the hub firewall (`0.0.0.0/0` route) and uses it as its DNS server, so the private DNS zones linked to the hub resolve everywhere. Each stack adds its own allow rules to the firewall policy as a rule collection group. Every spoke subnet has an IP group in the hub resource group (`<env>-ipg-<workload>-<spoke>-<subnet>`), and rules use those IP groups as their sources.
+
+## STIG-hardened images
+
+Image Builder can harden any image to the DISA STIG: set `stig = true` in its param file in `image-builder/images/`. The hardening runs as the last build step, after the apps are installed. Every download (GPO package, LGPO, SCC, SCAP Security Guide) is pinned by URL and SHA256 in `image-builder/main.bicep`, and the build gets it from the image builder storage account, not the internet.
+
+- **Windows** ([`stig.ps1`](image-builder/stig.ps1)): imports the DISA STIG GPO package with LGPO (Windows 11, Defender Firewall, Defender Antivirus and Edge by default; Office can be added). It also applies settings the GPOs don't cover: TLS protocols and ciphers, .NET strong crypto, DEP, removing PowerShell 2.0, and auditing. The GPOs are imported in Image Builder's deprovisioning script, just before sysprep. The STIG blocks network logon for local accounts, so applying it earlier would cut off the build's WinRM session.
+- **Linux** ([`stig-linux.sh`](image-builder/stig-linux.sh)): applies the SCAP Security Guide (ComplianceAsCode) `stig` profile with OpenSCAP, minus a short list of excluded rules. It also installs `sudo stig-scan` to check a VM built from the image. The first scan: 212 pass, 9 fail, 5 not checked.
+- **What isn't applied:** both scripts list each STIG setting they skip and why, such as passwordless sudo for Azure's key-only admin, BitLocker without a pre-boot PIN, and FIPS mode, which needs Ubuntu Pro. These are meant to go into the findings report as they are. DISA SCC can be installed in the image for a full scan.
+- **New STIG release:** DISA publishes a new GPO package every quarter. Update its URL and hash in `main.bicep`, run `publish.sh` and rebuild.
 
 ## Naming
 
