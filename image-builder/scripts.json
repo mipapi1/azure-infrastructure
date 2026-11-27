@@ -1,0 +1,7 @@
+{
+  "stig.ps1": "eec6519cfd87b0c6c9e9ace0cffdce997ab56a14b84070e74898f8ffc95f6432",
+  "stig-linux.sh": "7af09f11e0eb29d13fbe20a8b279208d41d2a840201549e329d09ea9818059bb",
+  "apps/install-vlc.ps1": "841e49725d3cccb9ee9ecc46f4721b4d61ef45cc450f0b5dc96dad9f4904eb93",
+  "apps/install-vscode.ps1": "9a8467c72fdf17a55add46b3d5b31d24c7e0cc10ef65259d1693c00b5bf6ca26",
+  "apps/install-vscode.sh": "537061ce4ec4df4f4b4006924d73e7862a545f41fb4aa0fda2f90d74a891e4d7"
+}

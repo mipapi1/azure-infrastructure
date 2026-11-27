@@ -1,0 +1,19 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: for f in */main.bicep; do az bicep build --file "$f" --stdout > /dev/null; done
+      - name: Lint
+        run: for f in */main.bicep modules/*.bicep; do az bicep lint --file "$f"; done

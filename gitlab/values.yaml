@@ -1,0 +1,129 @@
+# GitLab Helm chart values: PostgreSQL, Redis and object storage are Azure services on private
+# endpoints (gitlab/main.bicep), so the bundled PostgreSQL, Redis and MinIO are off. Gitaly runs
+# in the cluster. Reached from AVD at http://gitlab.gitlab.internal.
+# Placeholders come from the gitlab deployment outputs (docs/DEPLOYMENT.md).
+global:
+  edition: ce
+  hosts:
+    domain: gitlab.internal
+    https: false
+  # Chart 10.x defaults to Gateway API and leaves ingress off; GitLab is served by the bundled NGINX.
+  ingress:
+    enabled: true
+    configureCertmanager: false
+    tls:
+      enabled: false
+  gatewayApi:
+    enabled: false
+    installEnvoy: false
+
+  # GitLab's pods use one service account, created with the secrets (docs/DEPLOYMENT.md) and
+  # federated to the id-gitlab managed identity, which signs in to blob storage. No storage keys exist.
+  serviceAccount:
+    enabled: true
+    create: false
+    name: gitlab
+
+  psql:
+    host: <postgres-server>.postgres.database.azure.com
+    database: gitlabhq_production
+    username: gitlab
+    password:
+      secret: gitlab-postgres
+      key: password
+
+  # Azure Managed Redis: one non-clustered endpoint, TLS on 10000.
+  redis:
+    host: <redis-host>
+    port: 10000
+    scheme: rediss
+    auth:
+      enabled: true
+      secret: gitlab-redis
+      key: password
+
+  extraEnv:
+    PGSSLMODE: require
+
+  minio:
+    enabled: false
+
+  registry:
+    bucket: registry
+
+  # Every object type in its own blob container (gitlab/main.bicep creates them).
+  appConfig:
+    object_store:
+      enabled: true
+      proxy_download: true
+      connection:
+        secret: gitlab-object-storage
+        key: connection
+    lfs:
+      bucket: git-lfs
+    artifacts:
+      bucket: gitlab-artifacts
+    uploads:
+      bucket: gitlab-uploads
+    packages:
+      bucket: gitlab-packages
+    externalDiffs:
+      enabled: true
+      bucket: gitlab-mr-diffs
+    terraformState:
+      enabled: true
+      bucket: gitlab-terraform-state
+    ciSecureFiles:
+      enabled: true
+      bucket: gitlab-ci-secure-files
+    dependencyProxy:
+      enabled: true
+      bucket: gitlab-dependency-proxy
+    backups:
+      bucket: gitlab-backups
+      tmpBucket: tmp
+
+installCertmanager: false
+# Required by the chart even with cert-manager off; not used (no certificates are issued).
+certmanager-issuer:
+  email: gitlab@gitlab.internal
+postgresql:
+  install: false
+redis:
+  install: false
+prometheus:
+  install: false
+gitlab-runner:
+  install: false
+
+registry:
+  podLabels:
+    azure.workload.identity/use: "true"
+  storage:
+    secret: gitlab-object-storage
+    key: registry
+
+gitlab:
+  webservice:
+    podLabels:
+      azure.workload.identity/use: "true"
+  sidekiq:
+    podLabels:
+      azure.workload.identity/use: "true"
+  toolbox:
+    podLabels:
+      azure.workload.identity/use: "true"
+    backups:
+      objectStorage:
+        backend: azure
+        config:
+          secret: gitlab-object-storage
+          key: backup
+
+nginx-ingress:
+  enabled: true
+  controller:
+    service:
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+        service.beta.kubernetes.io/azure-load-balancer-ipv4: 10.5.0.250 # ingressIp in gitlab/main.bicepparam

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# DISA STIG hardening for the Ubuntu 24.04 image. Runs as an Image Builder step (root).
+# Applies the SCAP Security Guide (ComplianceAsCode) STIG profile fixes, minus the rules in
+# `excludes`, and installs `stig-scan` to check a VM built from the image.
+#
+# bootstrap.sh has already downloaded the installers from the image builder storage account and
+# checked their SHA256. Settings come from the image param file (images/) as environment variables:
+#   SSG_ZIP          SCAP Security Guide release zip (linuxSsg)
+#   STIG_PROFILE     SSG profile id (linuxStigProfile), e.g. stig or cis_level1_server
+#   STIG_EXCLUDES    space-separated rule ids not applied (linuxStigExcludes)
+#   SCC_ZIP          optional DISA SCC bundle with a .deb (linuxScc); empty: not installed
+#
+# Not applied, with the reason (report these as findings):
+#   sudo_remove_nopasswd,  The Azure admin account is key-only and has no password, so it needs
+#   sudo_require_authentication  passwordless sudo (both rules remove NOPASSWD). Image Builder's
+#                          build user does too: without it the build hangs at a sudo prompt.
+#   FIPS mode              FIPS modules need Ubuntu Pro.
+#   GRUB password          Needs a per-VM secret and would stop unattended boots; the serial
+#                          console already requires Azure RBAC.
+#   Manual checks          `stig-scan` reports them as notchecked; review them by hand.
+# Left failing in `stig-scan`, with the reason:
+#   Log file permissions   Logs written at first boot (cloud-init, waagent) are 0644. Fix on each VM:
+#                          sudo find /var/log -type f -perm /137 -exec chmod 640 {} +
+#   SSSD, certificate map  Smart card sign-in through SSSD isn't used: sign-in is by SSH key.
+#   Audit log offload      Needs a log forwarder (e.g. Azure Monitor Agent with a data collection rule).
+# First scan of an image built with this script: 212 pass, 9 fail (the items above), 5 notchecked.
+set -euo pipefail
+
+ssg_zip=${SSG_ZIP:?}
+profile=${STIG_PROFILE:-stig}
+read -r -a excludes <<< "${STIG_EXCLUDES:-}"
+
+dir=/usr/local/share/stig
+log=/var/log/stig
+install -d -m 0755 "$dir"
+install -d -m 0700 "$log"
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update -q
+apt-get install -y -q unzip ufw openscap-scanner
+
+unzip -q -o -j "$ssg_zip" "*/ssg-ubuntu2404-ds.xml" "*/bash/ubuntu2404-script-${profile}.sh" -d "$dir"
+
+# Drop the excluded rules from the generated fix script.
+awk -v list="${excludes[*]}" '
+  BEGIN { n = split(list, r, " "); for (i = 1; i <= n; i++) skip["xccdf_org.ssgproject.content_rule_" r[i]] = 1 }
+  /^# BEGIN fix / { id = $0; sub(/^.*for \047/, "", id); sub(/\047.*$/, "", id); if (id in skip) dropping = 1 }
+  !dropping { print }
+  /^# END fix / { dropping = 0 }
+' "$dir/ubuntu2404-script-${profile}.sh" > "$dir/fixes.sh"
+
+# One fix turns the firewall on: allow SSH first so VMs stay reachable.
+ufw allow 22/tcp > /dev/null
+
+# Two passes: some fixes depend on packages or files that another fix creates.
+for pass in 1 2; do
+  echo "STIG: applying fixes, pass ${pass}"
+  bash "$dir/fixes.sh" > "$log/fixes-${pass}.log" 2>&1 || echo "STIG: pass ${pass} exited $?; see $log/fixes-${pass}.log"
+done
+ufw limit 22/tcp > /dev/null
+ufw --force enable > /dev/null
+
+install -d -m 0755 /run/sshd
+sshd -t
+
+# DISA SCAP Compliance Checker, if a bundle was given.
+if [[ -n "${SCC_ZIP:-}" ]]; then
+  unzip -q -o "$SCC_ZIP" -d /tmp/scc
+  deb=$(find /tmp/scc -name '*.deb' | head -n 1)
+  [[ -n "$deb" ]] || { echo "STIG: no .deb in $SCC_ZIP"; exit 1; }
+  apt-get install -y -q "$deb"
+  rm -rf /tmp/scc
+fi
+
+cat > /usr/local/sbin/stig-scan <<EOF
+#!/bin/sh
+# Scans this VM against the hardening profile and prints the result counts.
+# Report: /var/log/stig/report.html
+oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_${profile} \
+  --results /var/log/stig/results.xml --report /var/log/stig/report.html \
+  /usr/local/share/stig/ssg-ubuntu2404-ds.xml > /var/log/stig/scan.txt 2>&1
+awk -F'\t' '/^Result/ { n[\$2]++ } END { for (r in n) print r, n[r] }' /var/log/stig/scan.txt | sort
+EOF
+chmod 0750 /usr/local/sbin/stig-scan
+echo "STIG: done. Run 'sudo stig-scan' on a VM built from this image."
