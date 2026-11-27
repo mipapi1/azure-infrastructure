@@ -1,29 +1,37 @@
-// Spoke network peered to vnet-hub. All traffic and DNS go through the hub firewall,
-// which gets this spoke's allow rules as its own rule collection group. Each subnet gets an
-// IP group in rg-hub (ipg-<name>-<subnet>) for rules to use as their source.
+// Spoke network peered to the hub VNet. All traffic and DNS go through the hub firewall, which gets
+// this spoke's allow rules as its own rule collection group (rcg-<spoke>). Each subnet gets an IP
+// group in the hub resource group (<env>-ipg-<workload>-<spoke>-<subnet>) for rules to use as sources.
+import { envCode, name } from 'naming.bicep'
 
-param name string
+param env envCode
+param workload string
+@description('Spoke component name, e.g. avd: <env>-vnet-<workload>-avd.')
+param spoke string
 param addressPrefix string
-@description('[{ name, addressPrefix, delegation?, privateLinkServices?, serviceEndpoints? }]: delegation is a service name; privateLinkServices allows Private Link services in the subnet; serviceEndpoints lists services such as Microsoft.Storage.')
+@description('''[{ name, addressPrefix, delegation?, privateLinkServices?, serviceEndpoints? }]. name is short (hosts,
+pe): the subnet is snet-<name>. delegation is a service name; privateLinkServices allows Private Link services in
+the subnet; serviceEndpoints lists services such as Microsoft.Storage.''')
 param subnets array
 param ruleCollections array
 param rulePriority int
 param location string = resourceGroup().location
 
+var hubGroup = resourceGroup(name(env, 'rg', workload, 'hub'))
+
 resource hubVnet 'Microsoft.Network/virtualNetworks@2025-07-01' existing = {
-  name: 'vnet-hub'
-  scope: resourceGroup('rg-hub')
+  name: name(env, 'vnet', workload, 'hub')
+  scope: hubGroup
 }
 
 resource firewall 'Microsoft.Network/azureFirewalls@2025-07-01' existing = {
-  name: 'afw-hub'
-  scope: resourceGroup('rg-hub')
+  name: name(env, 'afw', workload, 'hub')
+  scope: hubGroup
 }
 
 var firewallIp = firewall.properties.ipConfigurations[0].properties.privateIPAddress
 
 resource routeTable 'Microsoft.Network/routeTables@2025-07-01' = {
-  name: 'rt-${name}'
+  name: name(env, 'rt', workload, spoke)
   location: location
   properties: {
     disableBgpRoutePropagation: true
@@ -41,14 +49,14 @@ resource routeTable 'Microsoft.Network/routeTables@2025-07-01' = {
 }
 
 resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
-  name: 'vnet-${name}'
+  name: name(env, 'vnet', workload, spoke)
   location: location
   properties: {
     addressSpace: { addressPrefixes: [addressPrefix] }
     dhcpOptions: { dnsServers: [firewallIp] }
     subnets: [
       for s in subnets: {
-        name: s.name
+        name: 'snet-${s.name}'
         properties: {
           addressPrefix: s.addressPrefix
           routeTable: { id: routeTable.id }
@@ -63,7 +71,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
 
 resource toHub 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2025-07-01' = {
   parent: vnet
-  name: 'peer-${name}-to-hub'
+  name: 'peer-${spoke}-to-hub'
   properties: {
     remoteVirtualNetwork: { id: hubVnet.id }
     allowVirtualNetworkAccess: true
@@ -72,29 +80,35 @@ resource toHub 'Microsoft.Network/virtualNetworks/virtualNetworkPeerings@2025-07
 }
 
 module fromHub 'hub-peering.bicep' = {
-  name: 'hub-peering-${name}'
-  scope: resourceGroup('rg-hub')
+  name: 'hub-peering-${spoke}'
+  scope: hubGroup
   params: {
-    name: name
+    env: env
+    workload: workload
+    spoke: spoke
     spokeVnetId: vnet.id
   }
 }
 
 module ipGroups 'ip-groups.bicep' = {
-  name: 'ip-groups-${name}'
-  scope: resourceGroup('rg-hub')
+  name: 'ip-groups-${spoke}'
+  scope: hubGroup
   params: {
-    name: name
+    env: env
+    workload: workload
+    spoke: spoke
     subnets: subnets
     location: location
   }
 }
 
 module rules 'firewall-rules.bicep' = {
-  name: 'firewall-rules-${name}'
-  scope: resourceGroup('rg-hub')
+  name: 'firewall-rules-${spoke}'
+  scope: hubGroup
   params: {
-    name: 'rcg-${name}'
+    env: env
+    workload: workload
+    name: 'rcg-${spoke}'
     priority: rulePriority
     ruleCollections: ruleCollections
   }
