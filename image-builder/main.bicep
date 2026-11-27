@@ -1,8 +1,8 @@
 // Image Builder: one image per deployment, described by its own param file in images/.
 // Each deployment creates or updates the shared parts (spoke, storage, identities, gallery) and
 // its own gallery image definition and template, named after the image:
-//   images/win11-avd.bicepparam         gallery definition win11-avd, template it-win11-avd
-//   images/ubuntu-2404-stig.bicepparam  gallery definition ubuntu-2404-stig, template it-ubuntu-2404-stig
+//   images/win11-avd.bicepparam         gallery definition win11-avd, template <env>-it-<workload>-win11-avd
+//   images/ubuntu-2404-stig.bicepparam  gallery definition ubuntu-2404-stig, template <env>-it-<workload>-ubuntu-2404-stig
 // Builds run in a spoke peered to the hub: the build VM sits in snet-build and reaches the internet only
 // through the hub firewall, which allows the endpoints below. buildMode picks how Image Builder's own
 // container (Packer) reaches the build VM:
@@ -14,7 +14,14 @@
 // endpoint: publish.sh downloads every installer, checks its SHA256 and uploads it with the
 // scripts; the first build step (bootstrap.ps1 / bootstrap.sh) downloads them with the build VM's
 // identity and checks every hash again.
-// Deploy into resource group rg-image-builder after the hub, run publish.sh, then run the template.
+// Deploy into resource group <env>-rg-<workload>-images after the hub, run publish.sh, then run the template.
+
+import { envCode, name, compactName } from '../modules/naming.bicep'
+
+@description('Environment: p (prod) or s (staging).')
+param env envCode
+@description('Workload name used in every resource name: <env>-<type>-<workload>-<component>.')
+param workload string
 
 @description('A downloadable file and its SHA256. Empty url: none.')
 type download = { url: string, sha256: string }
@@ -84,34 +91,37 @@ param location string = resourceGroup().location
 var buildPrefix = '10.4.0.0/25'
 var containerPrefix = '10.4.0.128/27'
 var endpointPrefix = '10.4.0.160/27'
-var buildIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-build')
-var containerIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-image-builder-snet-container')
+var hubGroup = name(env, 'rg', workload, 'hub')
+var buildIpGroup = resourceId(hubGroup, 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, 'images-build'))
+var containerIpGroup = resourceId(hubGroup, 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, 'images-container'))
 
 module spoke '../modules/spoke.bicep' = {
-  name: 'spoke-image-builder'
+  name: 'spoke-images'
   params: {
-    name: 'image-builder'
+    env: env
+    workload: workload
+    spoke: 'images'
     location: location
     addressPrefix: '10.4.0.0/24'
     subnets: [
-      { name: 'snet-build', addressPrefix: buildPrefix, privateLinkServices: true }
+      { name: 'build', addressPrefix: buildPrefix, privateLinkServices: true }
       // Image Builder's container mounts a file share from its staging storage account (created per
       // build, so no private endpoint is possible). Microsoft requires a Storage service endpoint on the
       // delegated subnet when outbound internet is blocked; its routes take Storage traffic directly over
       // the Azure backbone, ahead of the 0.0.0.0/0 route to the firewall. Without it the container
       // stays in "Creating".
       {
-        name: 'snet-container'
+        name: 'container'
         addressPrefix: containerPrefix
         delegation: 'Microsoft.ContainerInstance/containerGroups'
         serviceEndpoints: ['Microsoft.Storage']
       }
-      { name: 'snet-pe', addressPrefix: endpointPrefix }
+      { name: 'pe', addressPrefix: endpointPrefix }
     ]
     rulePriority: 500
     ruleCollections: [
       {
-        name: 'image-builder-network'
+        name: 'images-network'
         ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
         priority: 100
         action: { type: 'Allow' }
@@ -135,7 +145,7 @@ module spoke '../modules/spoke.bicep' = {
         ]
       }
       {
-        name: 'image-builder-application'
+        name: 'images-application'
         ruleCollectionType: 'FirewallPolicyFilterRuleCollection'
         priority: 200
         action: { type: 'Allow' }
@@ -143,7 +153,7 @@ module spoke '../modules/spoke.bicep' = {
           {
             // Isolated builds: Packer calls Azure Resource Manager and Entra ID and writes logs to the staging account.
             ruleType: 'ApplicationRule'
-            name: 'image-builder-container'
+            name: 'images-container'
             protocols: [{ protocolType: 'Https', port: 443 }]
             sourceIpGroups: [containerIpGroup]
             targetFqdns: [
@@ -158,7 +168,7 @@ module spoke '../modules/spoke.bicep' = {
           {
             // Image Builder's proxy VM and the build VM: VM extensions, managed disks and the staging storage account.
             ruleType: 'ApplicationRule'
-            name: 'image-builder-storage'
+            name: 'images-storage'
             protocols: [{ protocolType: 'Https', port: 443 }]
             sourceIpGroups: [buildIpGroup]
             targetFqdns: ['*.blob.storage.azure.net', '*.blob.${environment().suffixes.storage}']
@@ -333,7 +343,7 @@ var vnetConfig = buildMode == 'isolated'
 var contributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
-  name: 'id-image-builder'
+  name: name(env, 'id', workload, 'images')
   location: location
 }
 
@@ -349,14 +359,14 @@ resource identityAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 // The build VM reads scripts and installers from storage with this identity.
 resource buildIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
-  name: 'id-image-builder-vm'
+  name: name(env, 'id', workload, 'images-vm')
   location: location
 }
 
 // Scripts and installers. No shared keys or anonymous access; the firewall denies by default and
 // publish.sh allows the publisher's IP only while it runs. Builds read over the private endpoint.
 resource contentStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = {
-  name: 'stimagebuilder${take(uniqueString(subscription().id), 6)}'
+  name: compactName(env, 'st', workload, 'images', subscription().id)
   location: location
   kind: 'StorageV2'
   sku: { name: 'Standard_LRS' }
@@ -408,14 +418,16 @@ resource publishers 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
 
 module blobZone '../modules/dns-zone.bicep' = {
   name: 'dns-blob'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.blob.${environment().suffixes.storage}'
   }
 }
 
 resource storageEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-image-builder-blob'
+  name: name(env, 'pep', workload, 'images-blob')
   location: location
   properties: {
     subnet: { id: '${spoke.outputs.vnetId}/subnets/snet-pe' }
@@ -442,7 +454,7 @@ resource storageDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
 }
 
 resource gallery 'Microsoft.Compute/galleries@2024-03-03' = {
-  name: 'gal_images'
+  name: '${env}gal${workload}' // galleries allow no hyphens
   location: location
 }
 
@@ -464,7 +476,7 @@ resource definition 'Microsoft.Compute/galleries/images@2024-03-03' = {
 }
 
 resource template 'Microsoft.VirtualMachineImages/imageTemplates@2024-02-01' = {
-  name: 'it-${image.name}'
+  name: name(env, 'it', workload, image.name)
   location: location
   identity: {
     type: 'UserAssigned'

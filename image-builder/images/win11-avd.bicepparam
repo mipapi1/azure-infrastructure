@@ -1,7 +1,10 @@
 using '../main.bicep'
 
+param env = 's' // p: prod, s: staging
+param workload = 'mipapi'
+
 // AVD session host image: Windows 11 multi-session with Microsoft 365 Apps.
-// Gallery definition win11-avd, template it-win11-avd. Used by avd/main.bicep.
+// Gallery definition win11-avd, template <env>-it-<workload>-win11-avd. Used by avd/main.bicep.
 param image = {
   name: 'win11-avd'
   os: 'Windows'

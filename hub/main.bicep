@@ -1,7 +1,13 @@
 // Hub network: firewall (all spoke egress and DNS), Bastion, Log Analytics with Sentinel,
 // Key Vault on a private endpoint and a budget.
-// Deploy into resource group rg-hub. Spokes find these resources by name.
+// Deploy into resource group <env>-rg-<workload>-hub. Spokes find these resources by name (modules/naming.bicep).
 
+import { envCode, name, uniqueName } from '../modules/naming.bicep'
+
+@description('Environment: p (prod) or s (staging).')
+param env envCode
+@description('Workload name used in every resource name: <env>-<type>-<workload>-<component>.')
+param workload string
 param alertEmail string
 @description('Basic: portal connections only. Standard: also native-client SSH/RDP (az network bastion ssh).')
 @allowed(['Basic', 'Standard'])
@@ -13,7 +19,7 @@ param budgetStartDate string = utcNow('yyyy-MM-01')
 param location string = resourceGroup().location
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
-  name: 'law-hub'
+  name: name(env, 'log', workload, 'hub')
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
@@ -29,7 +35,7 @@ resource sentinel 'Microsoft.SecurityInsights/onboardingStates@2024-03-01' = {
 }
 
 resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
-  name: 'vnet-hub'
+  name: name(env, 'vnet', workload, 'hub')
   location: location
   properties: {
     addressSpace: { addressPrefixes: ['10.0.0.0/22'] }
@@ -43,14 +49,14 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
 }
 
 resource firewallIp 'Microsoft.Network/publicIPAddresses@2025-07-01' = {
-  name: 'pip-afw-hub'
+  name: name(env, 'pip', workload, 'afw')
   location: location
   sku: { name: 'Standard' }
   properties: { publicIPAllocationMethod: 'Static' }
 }
 
 resource bastionIp 'Microsoft.Network/publicIPAddresses@2025-07-01' = {
-  name: 'pip-bas-hub'
+  name: name(env, 'pip', workload, 'bas')
   location: location
   sku: { name: 'Standard' }
   properties: { publicIPAllocationMethod: 'Static' }
@@ -58,7 +64,7 @@ resource bastionIp 'Microsoft.Network/publicIPAddresses@2025-07-01' = {
 
 // Spokes use the firewall as their DNS server, so private DNS zones linked to the hub resolve everywhere.
 resource firewallPolicy 'Microsoft.Network/firewallPolicies@2025-07-01' = {
-  name: 'afwp-hub'
+  name: name(env, 'afwp', workload, 'hub')
   location: location
   properties: {
     sku: { tier: 'Standard' }
@@ -68,7 +74,7 @@ resource firewallPolicy 'Microsoft.Network/firewallPolicies@2025-07-01' = {
 }
 
 resource firewall 'Microsoft.Network/azureFirewalls@2025-07-01' = {
-  name: 'afw-hub'
+  name: name(env, 'afw', workload, 'hub')
   location: location
   properties: {
     sku: { name: 'AZFW_VNet', tier: 'Standard' }
@@ -86,7 +92,7 @@ resource firewall 'Microsoft.Network/azureFirewalls@2025-07-01' = {
 }
 
 resource firewallLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'diag-afw-hub'
+  name: 'diag-afw'
   scope: firewall
   properties: {
     workspaceId: workspace.id
@@ -96,7 +102,7 @@ resource firewallLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'
 }
 
 resource bastion 'Microsoft.Network/bastionHosts@2025-07-01' = {
-  name: 'bas-hub'
+  name: name(env, 'bas', workload, 'hub')
   location: location
   sku: { name: bastionSku }
   properties: {
@@ -116,7 +122,7 @@ resource bastion 'Microsoft.Network/bastionHosts@2025-07-01' = {
 // Platform secrets. RBAC only, no public access. Purge protection is off so a torn-down sandbox
 // can be purged and redeployed; turn it on for production and for customer-managed keys.
 resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
-  name: 'kv-hub-${take(uniqueString(subscription().id), 6)}'
+  name: uniqueName(env, 'kv', workload, 'hub', subscription().id)
   location: location
   properties: {
     tenantId: tenant().tenantId
@@ -129,7 +135,7 @@ resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
 }
 
 resource vaultLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'diag-kv-hub'
+  name: 'diag-kv'
   scope: vault
   properties: {
     workspaceId: workspace.id
@@ -140,13 +146,15 @@ resource vaultLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = 
 module vaultZone '../modules/dns-zone.bicep' = {
   name: 'dns-vault'
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.vaultcore.azure.net'
   }
   dependsOn: [vnet]
 }
 
 resource vaultEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = {
-  name: 'pe-hub-vault'
+  name: name(env, 'pep', workload, 'hub-vault')
   location: location
   properties: {
     subnet: { id: '${vnet.id}/subnets/snet-pe' }
@@ -176,6 +184,8 @@ module budget '../modules/budget.bicep' = {
   name: 'hub-budget'
   scope: subscription()
   params: {
+    env: env
+    workload: workload
     amount: budgetAmount
     startDate: budgetStartDate
     email: alertEmail

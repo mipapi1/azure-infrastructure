@@ -1,7 +1,10 @@
 using '../main.bicep'
 
+param env = 's' // p: prod, s: staging
+param workload = 'mipapi'
+
 // Linux image: Ubuntu 24.04 LTS, STIG-hardened with the SCAP Security Guide. Used by jumpbox/main.bicep.
-// Gallery definition ubuntu-2404-stig, template it-ubuntu-2404-stig.
+// Gallery definition ubuntu-2404-stig, template <env>-it-<workload>-ubuntu-2404-stig.
 param image = {
   name: 'ubuntu-2404-stig'
   os: 'Linux'

@@ -1,6 +1,12 @@
 // Azure Virtual Desktop: spoke network, pooled host pool, desktop, workspace, FSLogix profile
 // storage and Entra-joined session hosts from the Marketplace or the image-builder gallery image.
-// Deploy into resource group rg-avd.
+// Deploy into resource group <env>-rg-<workload>-avd.
+import { envCode, name, compactName } from '../modules/naming.bicep'
+
+@description('Environment: p (prod) or s (staging).')
+param env envCode
+@description('Workload name used in every resource name: <env>-<type>-<workload>-<component>.')
+param workload string
 
 param userGroupId string
 param adminGroupId string
@@ -153,24 +159,27 @@ param scalingPlan {
   ]
 }
 
-@description('Send host pool, application group and workspace logs to law-hub.')
+@description('Send host pool, application group and workspace logs to the hub Log Analytics workspace.')
 param diagnostics bool = true
 
 param tokenStart string = utcNow()
 param location string = resourceGroup().location
 
 var subnetPrefix = '10.1.0.0/24'
-var hostsIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-avd-snet-hosts')
+var hubGroup = name(env, 'rg', workload, 'hub')
+var hostsIpGroup = resourceId(hubGroup, 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, 'avd-hosts'))
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-avd'
   params: {
-    name: 'avd'
+    env: env
+    workload: workload
+    spoke: 'avd'
     location: location
     addressPrefix: '10.1.0.0/23'
     subnets: [
-      { name: 'snet-hosts', addressPrefix: subnetPrefix }
-      { name: 'snet-pe', addressPrefix: '10.1.1.0/27' }
+      { name: 'hosts', addressPrefix: subnetPrefix }
+      { name: 'pe', addressPrefix: '10.1.1.0/27' }
     ]
     rulePriority: 100
     ruleCollections: [
@@ -225,7 +234,7 @@ module spoke '../modules/spoke.bicep' = {
 }
 
 resource pool 'Microsoft.DesktopVirtualization/hostPools@2024-04-03' = {
-  name: 'vdpool-avd'
+  name: name(env, 'vdpool', workload, 'avd')
   location: location
   properties: {
     hostPoolType: 'Pooled'
@@ -243,7 +252,7 @@ resource pool 'Microsoft.DesktopVirtualization/hostPools@2024-04-03' = {
 }
 
 resource desktop 'Microsoft.DesktopVirtualization/applicationGroups@2024-04-03' = {
-  name: 'vdag-avd'
+  name: name(env, 'vdag', workload, 'avd')
   location: location
   properties: {
     applicationGroupType: 'Desktop'
@@ -252,7 +261,7 @@ resource desktop 'Microsoft.DesktopVirtualization/applicationGroups@2024-04-03' 
 }
 
 resource desktopWorkspace 'Microsoft.DesktopVirtualization/workspaces@2024-04-03' = {
-  name: 'vdws-avd'
+  name: name(env, 'vdws', workload, 'avd')
   location: location
   properties: {
     friendlyName: workspace.friendlyName
@@ -261,22 +270,22 @@ resource desktopWorkspace 'Microsoft.DesktopVirtualization/workspaces@2024-04-03
   }
 }
 
-var logs = resourceId('rg-hub', 'Microsoft.OperationalInsights/workspaces', 'law-hub')
+var logs = resourceId(hubGroup, 'Microsoft.OperationalInsights/workspaces', name(env, 'log', workload, 'hub'))
 
 resource poolLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
-  name: 'diag-vdpool-avd'
+  name: 'diag-vdpool'
   scope: pool
   properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
 }
 
 resource desktopLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
-  name: 'diag-vdag-avd'
+  name: 'diag-vdag'
   scope: desktop
   properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
 }
 
 resource workspaceLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (diagnostics) {
-  name: 'diag-vdws-avd'
+  name: 'diag-vdws'
   scope: desktopWorkspace
   properties: { workspaceId: logs, logs: [{ categoryGroup: 'allLogs', enabled: true }] }
 }
@@ -296,7 +305,7 @@ resource avdPower 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!em
 }
 
 resource scaling 'Microsoft.DesktopVirtualization/scalingPlans@2024-04-03' = if (scalingPlan.enabled) {
-  name: 'vdscaling-avd'
+  name: name(env, 'vdscaling', workload, 'avd')
   location: location
   properties: {
     hostPoolType: 'Pooled'
@@ -346,7 +355,7 @@ var useFiles = fslogix.storageType == 'AzureFiles'
 var storageService = useFiles ? 'file' : 'blob'
 
 resource profileStorage 'Microsoft.Storage/storageAccounts@2025-01-01' = if (fslogix.enabled) {
-  name: 'stavd${take(uniqueString(subscription().id), 6)}'
+  name: compactName(env, 'st', workload, 'avd', subscription().id)
   location: location
   kind: useFiles ? 'FileStorage' : 'StorageV2'
   sku: { name: useFiles ? 'Premium_LRS' : 'Standard_LRS' }
@@ -382,14 +391,16 @@ resource profileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@202
 
 module storageZone '../modules/dns-zone.bicep' = if (fslogix.enabled) {
   name: 'dns-${storageService}'
-  scope: resourceGroup('rg-hub')
+  scope: resourceGroup(hubGroup)
   params: {
+    env: env
+    workload: workload
     name: 'privatelink.${storageService}.${environment().suffixes.storage}'
   }
 }
 
 resource profileEndpoint 'Microsoft.Network/privateEndpoints@2025-07-01' = if (fslogix.enabled) {
-  name: 'pe-avd-${storageService}'
+  name: name(env, 'pep', workload, 'avd-${storageService}')
   location: location
   properties: {
     subnet: { id: '${spoke.outputs.vnetId}/subnets/snet-pe' }
@@ -419,10 +430,13 @@ resource profileDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
 // Same pool, image, size and forceNewHost: same names. Changing any of them deploys a new set.
 var hostId = take(uniqueString(resourceGroup().id, imageId, sessionHosts.vmSize, sessionHosts.forceNewHost), 3)
 var hostNames = [for i in range(0, sessionHosts.count): '${sessionHosts.namePrefix}${hostId}-${padLeft(i + sessionHosts.startNumber, 3, '0')}']
+var vmNames = [for h in hostNames: name(env, 'vmw', workload, h)]
+var nicNames = [for h in hostNames: name(env, 'nic', workload, h)]
+var diskNames = [for h in hostNames: name(env, 'osdisk', workload, h)]
 
 resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
   for i in range(0, sessionHosts.count): {
-    name: 'nic-${hostNames[i]}'
+    name: nicNames[i]
     location: location
     properties: {
       enableAcceleratedNetworking: sessionHosts.acceleratedNetworking
@@ -440,7 +454,7 @@ resource nics 'Microsoft.Network/networkInterfaces@2025-07-01' = [
 
 resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
   for i in range(0, sessionHosts.count): {
-    name: 'vm-${hostNames[i]}'
+    name: vmNames[i]
     location: location
     identity: { type: 'SystemAssigned' }
     properties: {
@@ -462,6 +476,7 @@ resource hosts 'Microsoft.Compute/virtualMachines@2025-04-01' = [
         osDisk: {
           createOption: 'FromImage'
           deleteOption: 'Delete'
+          name: diskNames[i]
           diskSizeGB: sessionHosts.osDiskSizeGB // room for the FSLogix local cache
           managedDisk: { storageAccountType: sessionHosts.osDiskType }
         }

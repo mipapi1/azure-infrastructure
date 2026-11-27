@@ -1,5 +1,8 @@
 using 'main.bicep'
 
+param env = 's' // p: prod, s: staging
+param workload = 'mipapi'
+
 param userGroupId = '<avd-users-group-object-id>'
 param adminGroupId = '<avd-admins-group-object-id>'
 param adminPassword = readEnvironmentVariable('AVD_ADMIN_PASSWORD', '')
@@ -9,7 +12,7 @@ param adminPassword = readEnvironmentVariable('AVD_ADMIN_PASSWORD', '')
 param avdServicePrincipalId = '<avd-service-principal-object-id>'
 
 // Session host image. Empty: Marketplace Windows 11 multi-session + Microsoft 365. For the image
-// builder image: az sig image-definition show -g rg-image-builder -r gal_images -i win11-avd --query id -o tsv
+// builder image: az sig image-definition show -g s-rg-mipapi-images -r sgalmipapi -i win11-avd --query id -o tsv
 param imageId = ''
 
 param hostPool = {
@@ -32,7 +35,7 @@ param workspace = {
 param sessionHosts = {
   count: 1
   startNumber: 1
-  namePrefix: 'avd' // hosts avd<hash>-001...; VMs vm-avd<hash>-001
+  namePrefix: 'avd' // hosts avd<hash>-001...; VMs s-vmw-mipapi-avd<hash>-001
   // After deleting hosts, set any new text here (e.g. a date) for new names: Entra keeps the old
   // hosts' devices, so a host with a reused name can't join.
   forceNewHost: ''
@@ -82,4 +85,4 @@ param scalingPlan = {
   ]
 }
 
-param diagnostics = true // host pool, application group and workspace logs to law-hub
+param diagnostics = true // host pool, application group and workspace logs to <env>-log-<workload>-hub

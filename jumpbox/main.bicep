@@ -1,6 +1,12 @@
 // Linux jumpbox: spoke network and one Ubuntu 24.04 VM, reached through the hub Bastion.
 // hardenedImage picks the STIG-hardened gallery image (image-builder) or the plain Marketplace image.
-// Deploy into resource group rg-jumpbox.
+// Deploy into resource group <env>-rg-<workload>-jumpbox.
+import { envCode, name } from '../modules/naming.bicep'
+
+@description('Environment: p (prod) or s (staging).')
+param env envCode
+@description('Workload name used in every resource name: <env>-<type>-<workload>-<component>.')
+param workload string
 
 param sshPublicKey string
 param hardenedImage bool = true
@@ -9,15 +15,17 @@ param vmSize string = 'Standard_B2s'
 param location string = resourceGroup().location
 
 var subnetPrefix = '10.3.0.0/24'
-var vmIpGroup = resourceId('rg-hub', 'Microsoft.Network/ipGroups', 'ipg-jumpbox-snet-vm')
+var vmIpGroup = resourceId(name(env, 'rg', workload, 'hub'), 'Microsoft.Network/ipGroups', name(env, 'ipg', workload, 'jumpbox-vm'))
 
 module spoke '../modules/spoke.bicep' = {
   name: 'spoke-jumpbox'
   params: {
-    name: 'jumpbox'
+    env: env
+    workload: workload
+    spoke: 'jumpbox'
     location: location
     addressPrefix: subnetPrefix
-    subnets: [{ name: 'snet-vm', addressPrefix: subnetPrefix }]
+    subnets: [{ name: 'vm', addressPrefix: subnetPrefix }]
     rulePriority: 400
     ruleCollections: [
       {
@@ -40,12 +48,12 @@ module spoke '../modules/spoke.bicep' = {
 }
 
 resource image 'Microsoft.Compute/galleries/images@2024-03-03' existing = {
-  name: 'gal_images/ubuntu-2404-stig'
-  scope: resourceGroup('rg-image-builder')
+  name: '${env}gal${workload}/ubuntu-2404-stig'
+  scope: resourceGroup(name(env, 'rg', workload, 'images'))
 }
 
 resource nic 'Microsoft.Network/networkInterfaces@2025-07-01' = {
-  name: 'nic-jumpbox'
+  name: name(env, 'nic', workload, 'jumpbox')
   location: location
   properties: {
     ipConfigurations: [
@@ -60,7 +68,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2025-07-01' = {
 }
 
 resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
-  name: 'vm-jumpbox'
+  name: name(env, 'vml', workload, 'jumpbox')
   location: location
   properties: {
     hardwareProfile: { vmSize: vmSize }
@@ -83,6 +91,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
       osDisk: {
         createOption: 'FromImage'
         deleteOption: 'Delete'
+        name: name(env, 'osdisk', workload, 'jumpbox')
         managedDisk: { storageAccountType: 'StandardSSD_LRS' }
       }
     }

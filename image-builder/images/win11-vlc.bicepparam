@@ -1,7 +1,10 @@
 using '../main.bicep'
 
+param env = 's' // p: prod, s: staging
+param workload = 'mipapi'
+
 // Example: Windows 11 Enterprise single session with VLC media player, STIG-hardened.
-// Gallery definition win11-vlc, template it-win11-vlc. Copy this file for a new image.
+// Gallery definition win11-vlc, template <env>-it-<workload>-win11-vlc. Copy this file for a new image.
 param image = {
   name: 'win11-vlc'
   os: 'Windows'

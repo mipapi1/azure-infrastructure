@@ -15,17 +15,23 @@
 # Needs az (signed in; publisherIds in the image param files grants the upload role), curl and python3.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-rg=rg-image-builder
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/image-builder
 mkdir -p "$cache"
 
 sha() { if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
-account=$(az storage account list -g "$rg" --query "[?starts_with(name, 'stimagebuilder')].name | [0]" -o tsv)
-[[ -n "$account" ]] || { echo "No stimagebuilder<suffix> storage account in $rg. Deploy image-builder first."; exit 1; }
-
 images=("$@")
 [[ ${#images[@]} -gt 0 ]] || images=("$here"/images/*.bicepparam)
+
+# Resource group and storage account names follow modules/naming.bicep, from the first image's env and workload.
+read -r env workload < <(az bicep build-params --file "${images[0]}" --stdout | python3 -I -c '
+import json, sys
+p = json.loads(json.load(sys.stdin)["parametersJson"])["parameters"]
+print(p["env"]["value"], p["workload"]["value"])
+')
+rg="$env-rg-$workload-images"
+account=$(az storage account list -g "$rg" --query "[?starts_with(name, '${env}st${workload}images')].name | [0]" -o tsv)
+[[ -n "$account" ]] || { echo "No storage account in $rg. Deploy image-builder first."; exit 1; }
 
 # One "url sha256" line per installer, wherever it sits in the parameters or their defaults.
 installers=$(for f in "${images[@]}"; do az bicep build-params --file "$f" --stdout; done | python3 -I -c '
