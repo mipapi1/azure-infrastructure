@@ -6,29 +6,32 @@ flowchart TB
     direction LR
     root[alz] --- plat[alz-platform] --- lz[alz-landingzones<br/>allowed locations, security benchmark]
   end
-  subgraph hub["Hub: rg-hub, vnet-hub 10.0.0.0/22"]
+  subgraph hub["Hub: s-rg-mipapi-hub, 10.0.0.0/22"]
     afw[Azure Firewall<br/>egress + DNS proxy<br/>IP group per spoke subnet]
     bas[Bastion]
     kv[(Key Vault<br/>private endpoint)]
     dns[(Private DNS zones<br/>vault, file/blob, acr,<br/>postgres, gitlab.internal)]
     law[(Log Analytics<br/>+ Sentinel)]
   end
-  subgraph aib["Image Builder spoke: rg-image-builder, 10.4.0.0/24"]
-    it[Image Builder<br/>build VM + container subnets]
-    gal[(Compute Gallery<br/>win11-avd, ubuntu-2404-stig)]
+  subgraph aib["Image Builder spoke: s-rg-mipapi-images, 10.4.0.0/24"]
+    it[Image Builder<br/>one template per image<br/>build VM + container subnets]
+    gal[(Compute Gallery sgalmipapi<br/>win11-avd, ubuntu-2404-stig)]
+    st[(Scripts + installers<br/>private endpoint)]
   end
-  subgraph jb["Jumpbox spoke: rg-jumpbox, 10.3.0.0/24"]
+  subgraph jb["Jumpbox spoke: s-rg-mipapi-jumpbox, 10.3.0.0/24"]
     vm[Ubuntu jumpbox<br/>STIG-hardened image]
   end
-  subgraph avd["AVD spoke: rg-avd, 10.1.0.0/23"]
+  subgraph avd["AVD spoke: s-rg-mipapi-avd, 10.1.0.0/23"]
     hosts[Session hosts<br/>Entra-joined] --- fsl[(FSLogix profiles<br/>Azure Files or blob)]
     hp[Host pool, desktop,<br/>workspace] --- hosts
   end
-  subgraph aks["AKS spoke: rg-aks, 10.2.0.0/22"]
-    cluster[aks-platform<br/>private, Entra RBAC] --- acr[(Container registry<br/>private endpoint)]
+  subgraph aks["Apps spoke: s-rg-mipapi-apps, 10.2.0.0/22"]
+    cluster[s-aks-mipapi-apps<br/>private, Entra RBAC] --- acr[(Container registry<br/>private endpoint)]
     cluster --- app[web-app<br/>internal LB]
-    cluster --- gl[GitLab<br/>Helm chart]
-    gl --- pg[(PostgreSQL<br/>rg-gitlab, private endpoint)]
+  end
+  subgraph glk["GitLab spoke: s-rg-mipapi-gitlab, 10.5.0.0/22"]
+    gcluster[s-aks-mipapi-gitlab<br/>private, Entra RBAC] --- gl[GitLab<br/>Helm chart]
+    gl --- pg[(PostgreSQL, Redis,<br/>blob storage<br/>private endpoints)]
   end
   mg ~~~ hub
   afw -->|allow-listed egress| net((Internet))
@@ -36,8 +39,10 @@ flowchart TB
   afw <-->|peering, 0.0.0.0/0| jb
   afw <-->|peering, 0.0.0.0/0| avd
   afw <-->|peering, 0.0.0.0/0| aks
+  afw <-->|peering, 0.0.0.0/0| glk
   afw -.->|logs| law
   it -->|images| gal
+  st -.->|bootstrap| it
   gal -.->|session host image| hosts
   gal -.->|VM image| vm
   bas -.->|SSH| vm
@@ -45,12 +50,12 @@ flowchart TB
 
   class root,plat,lz gov
   class afw,bas,kv sec
-  class hosts,hp,cluster,app,vm net
-  class dns,fsl,acr,pg,gal data
+  class hosts,hp,cluster,gcluster,app,vm net
+  class dns,fsl,acr,pg,gal,st data
   class law obs
   class it,gl ci
   class net muted
   class mg z-gov
   class hub z-sec
-  class avd,aks,jb z-net
+  class avd,aks,jb,glk z-net
   class aib z-ci
